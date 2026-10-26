@@ -1,0 +1,18 @@
+{
+  "project_id": "appgprj_6ac70036826c8191a92540ccb9c9be14",
+  "version_id": "appgprj_6ac70036826c8191a92540ccb9c9be14~appgver_be43913e2f90819190128cf77db7d64b",
+  "deployment_id": "appgdep_6ac7033d98b48191a2dac13f605e7653",
+  "status": "succeeded",
+  "url": "https://table-for-you-evanston.siosiohan666.chatgpt.site",
+  "access_mode": "public",
+  "source_commit": "f0aa124602d97cfff7e6a9f09d2dd7e5c8623244",
+  "verification": {
+    "model_parity_cases": 12,
+    "adapter_checks": "passed",
+    "browser_feedback_flow": "passed",
+    "webmcp_valid_and_invalid_inputs": "passed",
+    "historical_user_interactions_uploaded": false,
+    "raw_reviews_uploaded": false,
+    "local_secrets_uploaded": false
+  }
+}

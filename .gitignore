@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+.env*
+
+# Raw data, derived data, logs and model artifacts are reproducible and never committed.
+data/*
+!data/README.md
+artifacts/
+*.sqlite3*

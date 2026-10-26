@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inside Table for You</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A plain-language guide to Table for You, a multi-stage Chicago restaurant recommender: where the data comes from, the baselines, the models, how they were tested and what ships.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a long-form guide. Sticky top bar, a hero with one real request, then a "route" rail of stations beside a
+   single reading column. Figures are built from HTML so their text stays crisp at phone width.
+   Identity is the service UI's own: Chicago-flag sky blue on cool neutrals, and the red six-pointed star marks what ships. */
+:root{
+  --bg:#F3F6F9;--surface:#FFFFFF;--surface-2:#E9EFF5;
+  --line:#D3DCE5;--line-strong:#AEBCCB;--ink:#121A23;--ink-2:#36434F;--muted:#5E6C7A;
+  --accent:#1B5CA3;--accent-ink:#FFFFFF;--accent-soft:#DFEBF8;--accent-line:#96B8E0;
+  --star:#C8102E;--star-soft:#FBE4E8;--bar:#8FA1B3;--tl-train:#C9D6E3;
+  --shadow:0 1px 2px rgba(18,26,35,.05),0 10px 28px rgba(18,26,35,.06);
+  --display:"Bricolage Grotesque","Avenir Next","Helvetica Neue","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",Arial,sans-serif;
+  --body:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D131A;--surface:#151D26;--surface-2:#1C2631;
+  --line:#283440;--line-strong:#3B4A5A;--ink:#E7ECF1;--ink-2:#C0CAD5;--muted:#8C99A7;
+  --accent:#7DB2EC;--accent-ink:#0D131A;--accent-soft:#1A2E45;--accent-line:#2F5681;
+  --star:#F07A8A;--star-soft:#3A1B22;--bar:#55687C;--tl-train:#2C3B4B;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.35);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D131A;--surface:#151D26;--surface-2:#1C2631;
+  --line:#283440;--line-strong:#3B4A5A;--ink:#E7ECF1;--ink-2:#C0CAD5;--muted:#8C99A7;
+  --accent:#7DB2EC;--accent-ink:#0D131A;--accent-soft:#1A2E45;--accent-line:#2F5681;
+  --star:#F07A8A;--star-soft:#3A1B22;--bar:#55687C;--tl-train:#2C3B4B;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.35);color-scheme:dark}
+
+/* language: English unless the root says zh */
+:root:not([data-lang="zh"]) [data-l="zh"],:root[data-lang="zh"] [data-l="en"]{display:none!important}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-padding-top:calc(env(safe-area-inset-top,0px) + 80px)}
+@media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 var(--body)}
+:root[data-lang="zh"] body{line-height:1.8}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+p{margin:0}
+a{color:var(--accent);text-underline-offset:2px}
+button{font:inherit;color:inherit;cursor:pointer}
+:is(a,button,summary,[tabindex]):focus-visible{outline:3px solid var(--accent-line);outline-offset:2px;border-radius:6px}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.eyebrow{font:600 11.5px/1.3 var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+:root[data-lang="zh"] .eyebrow{letter-spacing:.06em}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.star{width:14px;height:14px;fill:var(--star);flex:none;vertical-align:-2px}
+
+/* top bar */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:16px;min-height:60px;padding-block:8px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;min-width:0}
+.brandmark{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);display:grid;place-items:center;flex:none}
+.brandmark svg{width:20px;height:20px;fill:var(--star)}
+.brand strong{display:block;font:700 17px/1.1 var(--display);letter-spacing:-.01em}
+.brand .eyebrow{display:block;margin-top:2px;font-size:10.5px}
+.top-links{margin-left:auto;display:flex;align-items:center;gap:14px}
+.top-links a{font-size:14px;font-weight:500;color:var(--ink-2);text-decoration:none;white-space:nowrap}
+.top-links a:hover{color:var(--accent)}
+.lang{display:flex;background:var(--surface-2);padding:3px;border-radius:9px}
+.lang button{border:0;background:transparent;color:var(--muted);font-size:13px;font-weight:500;padding:5px 10px;border-radius:6px;min-width:40px}
+.lang button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+@media (max-width:560px){.top-links .gh-arrow{display:none}.brand .eyebrow{display:none}}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:48px;align-items:start;padding-block:52px 48px}
+.hero-text{display:grid;gap:18px;min-width:0}
+h1{font-size:clamp(32px,4.6vw,50px);line-height:1.06;font-weight:700;letter-spacing:-.025em}
+.lead{font-size:18px;color:var(--ink-2);max-width:58ch}
+.facts{display:flex;flex-wrap:wrap;gap:10px 32px;margin:6px 0 0;padding:0;list-style:none}
+.facts li{display:grid;gap:2px}
+.facts b{font:600 23px/1.1 var(--display);letter-spacing:-.01em}
+.facts span{font-size:13px;color:var(--muted)}
+.example{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px 22px;display:grid;gap:14px;min-width:0}
+.example-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12.5px;line-height:1.4;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:500}
+.count{font:500 12.5px var(--mono);color:var(--muted)}
+.picks{list-style:none;margin:0;padding:0}
+.picks li{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:4px 12px;align-items:baseline;padding:12px 0;border-top:1px solid var(--line)}
+.picks .rank{font:500 14px var(--mono);color:var(--muted)}
+.picks strong{font:600 16px/1.3 var(--display)}
+.picks .meta{grid-column:2/4;font-size:13px;color:var(--muted)}
+.picks .dist{font:500 13px var(--mono);color:var(--ink-2)}
+.fine{font-size:12px;line-height:1.55;color:var(--muted)}
+.why{background:var(--surface-2);border-radius:10px;padding:10px 12px;display:grid;gap:4px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+@media (max-width:900px){.hero{grid-template-columns:minmax(0,1fr);gap:28px;padding-block:36px 36px}}
+
+/* rail + reading column */
+.layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:64px;align-items:start;padding-bottom:40px;border-top:1px solid var(--line)}
+.rail{position:sticky;top:calc(env(safe-area-inset-top,0px) + 76px);padding-top:56px}
+.rail .eyebrow{display:block;margin-bottom:12px}
+.rail ol{list-style:none;margin:0;padding:0;position:relative}
+.rail ol::before{content:"";position:absolute;left:5px;top:12px;bottom:12px;width:2px;background:var(--line)}
+.rail a{display:flex;align-items:center;gap:12px;padding:4px 0;text-decoration:none;color:var(--muted);font-size:13.5px;line-height:1.35}
+.rail a::before{content:"";flex:none;width:12px;height:12px;border-radius:50%;background:var(--bg);border:2px solid var(--line-strong);position:relative;z-index:1}
+.rail a:hover{color:var(--ink)}
+.rail a[aria-current="true"]{color:var(--ink);font-weight:600}
+.rail a[aria-current="true"]::before{background:var(--accent);border-color:var(--accent)}
+main{min-width:0;max-width:740px}
+.toc{display:none;margin-top:28px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.toc summary{font-weight:600;cursor:pointer}
+.toc ol{margin:10px 0 2px;padding-left:22px;columns:2;column-gap:24px;font-size:14px}
+.toc li{break-inside:avoid;padding:2px 0}
+@media (max-width:1020px){.layout{grid-template-columns:minmax(0,1fr)}.rail{display:none}.toc{display:block}}
+@media (max-width:480px){.toc ol{columns:1}}
+
+section{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding-block:52px 4px}
+section>*{min-width:0}
+section+section{border-top:1px solid var(--line);margin-top:48px}
+h2{font-size:clamp(25px,3.2vw,32px);line-height:1.15;font-weight:600;letter-spacing:-.018em}
+h3{font-size:19px;line-height:1.3;font-weight:600;letter-spacing:-.01em}
+section>h3{margin-top:14px}
+section>p,section>ul,section>ol{max-width:68ch;color:var(--ink-2)}
+section>ul,section>ol{margin:0;padding-left:22px;display:grid;gap:8px}
+strong{color:var(--ink);font-weight:600}
+.note{background:var(--surface-2);border-radius:12px;padding:16px 18px;display:grid;gap:8px;font-size:15px;color:var(--ink-2)}
+.note h3{font-size:16px}
+.note ul{margin:0;padding-left:20px;display:grid;gap:6px}
+
+figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;min-width:0;position:relative}
+figcaption{font-size:13px;line-height:1.55;color:var(--muted);margin-top:14px;max-width:68ch}
+.fig-title{font:600 15px/1.3 var(--display);margin-bottom:14px}
+
+/* pipeline figure */
+.pipe-grid{display:grid;grid-template-columns:minmax(0,1fr) 84px 84px;column-gap:10px}
+.pipe-top{padding:0 15px}
+.pipe-head{font:600 11px/1.3 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:center;padding:0 0 8px}
+.pipe-head:first-child{text-align:left}
+.pipe-list{list-style:none;margin:0;padding:0;display:grid}
+.stage{align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.stage b{display:block;font:600 15px/1.3 var(--display)}
+.stage span{display:block;font-size:13px;line-height:1.45;color:var(--muted);margin-top:2px}
+.stage .num{font:500 18px/1 var(--mono);text-align:center;font-variant-numeric:tabular-nums;color:var(--ink)}
+.stage .num small{display:block;font:400 11px/1.3 var(--body);color:var(--muted);margin-top:4px}
+.stage.out{background:var(--accent-soft);border-color:var(--accent-line)}
+.link{display:flex;align-items:center;gap:8px;padding:5px 0 5px 16px;font-size:13px;font-style:italic;color:var(--muted)}
+.link::before{content:"\2193";font-style:normal;font-weight:600;color:var(--accent)}
+@media (max-width:520px){.pipe-grid{grid-template-columns:minmax(0,1fr) 62px 62px;column-gap:6px}.stage{padding:10px}.stage .num{font-size:15px}}
+
+/* data funnel bars */
+.ingest{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.ingest li{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:4px 14px;align-items:center}
+.ingest .lbl{font-size:14px;color:var(--ink-2);line-height:1.45}
+.ingest .sub{display:block;font-size:12.5px;color:var(--muted)}
+.ingest .n{grid-row:1/3;grid-column:2;font:500 15px var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.ingest .track{height:10px;background:var(--surface-2);border-radius:0 4px 4px 0}
+.ingest .track i{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0;min-width:3px}
+
+/* sample record */
+.record{display:flex;flex-wrap:wrap;gap:8px;font:500 14px var(--mono)}
+.record span{background:var(--surface-2);border-radius:8px;padding:6px 10px;display:grid;gap:1px}
+.record small{font:500 10.5px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+/* bar charts (HTML, one shared scale per chart) */
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-2);margin-bottom:12px}
+.key{display:inline-flex;align-items:center;gap:7px}
+.key i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.bars{display:grid;gap:2px}
+.bars .group{font:600 11px/1.3 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:10px 0 4px}
+.row{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr);gap:14px;align-items:center;min-height:40px;border-radius:8px;padding:0 6px;margin:0 -6px}
+.row:hover,.row:focus-visible{background:var(--surface-2)}
+.row .name{font-size:13.5px;line-height:1.35;color:var(--ink-2)}
+.row .name .star{margin-right:5px}
+.row.served .name{color:var(--ink);font-weight:600}
+.plot{position:relative;padding-right:58px;height:34px}
+.track2{position:absolute;inset:0 58px 0 0;background:linear-gradient(to right,var(--line) 1px,transparent 1px) 0 0/var(--grid) 100% repeat-x;box-shadow:inset -1px 0 var(--line)}
+.bar{position:absolute;left:0;top:50%;height:14px;width:var(--v);transform:translateY(-50%);background:var(--bar);border-radius:0 4px 4px 0}
+.served .bar,.bar.on{background:var(--accent)}
+.ci{position:absolute;top:50%;left:var(--lo);width:calc(var(--hi) - var(--lo));height:2px;transform:translateY(-50%);background:var(--ink-2)}
+.ci::before,.ci::after{content:"";position:absolute;top:-4px;width:2px;height:10px;background:var(--ink-2)}
+.ci::before{left:0}.ci::after{right:0}
+.val{position:absolute;top:50%;left:calc(var(--end) + 8px);transform:translateY(-50%);font:500 12.5px var(--mono);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.axis{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr);gap:14px;margin-top:6px}
+.ticks{position:relative;height:18px;margin-right:58px;font:400 11.5px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.ticks span{position:absolute;top:0;transform:translateX(-50%)}
+.ticks span:first-child{transform:none}
+.ticks span:last-child{transform:translateX(-100%)}
+.axis-name{font-size:12px;color:var(--muted);text-align:right;align-self:start}
+@media (max-width:560px){.row,.axis{grid-template-columns:minmax(0,118px) minmax(0,1fr);gap:10px}.row .name{font-size:12.5px}}
+.tip{position:absolute;z-index:5;pointer-events:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px;font-size:12.5px;line-height:1.45;color:var(--ink-2);max-width:260px}
+.tip b{display:block;font:600 16px/1.2 var(--mono);color:var(--ink)}
+.tip .t-name{color:var(--muted);margin-bottom:2px}
+details.table{margin-top:14px;font-size:14px}
+details.table summary{cursor:pointer;color:var(--accent);font-weight:500;width:max-content;max-width:100%}
+
+/* tables */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.45}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11.5px/1.3 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+td.n,th.n{text-align:right;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.decide td:first-child{font-weight:600;color:var(--ink);min-width:170px}
+.decide td:last-child{color:var(--ink-2);min-width:220px}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;background:var(--surface-2);color:var(--ink-2)}
+.status.ship{background:var(--star-soft);color:var(--ink)}
+.status.alt{background:var(--accent-soft);color:var(--accent)}
+
+/* timeline */
+.tl-bar{display:flex;gap:2px;height:30px}
+.tl-bar span{border-radius:4px;min-width:6px}
+.tl-train{flex:1277;background:var(--tl-train)}
+.tl-val{flex:82;background:var(--accent-line)}
+.tl-test{flex:102;background:var(--accent)}
+.tl-ticks{position:relative;height:20px;margin-top:6px;font:400 12px var(--mono);color:var(--muted)}
+.tl-ticks span{position:absolute;transform:translateX(-50%)}
+.tl-ticks span:first-child{transform:none}
+.tl-ticks span:last-child{transform:translateX(-100%)}
+.tl-legend{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tl-legend li{display:grid;align-content:start;gap:2px;font-size:13px;color:var(--muted);line-height:1.45}
+.tl-legend b{display:flex;align-items:center;gap:8px;font:600 14.5px var(--display);color:var(--ink)}
+.tl-legend i{width:12px;height:12px;border-radius:3px;flex:none}
+.tl-legend .mono{color:var(--ink-2)}
+@media (max-width:620px){.tl-legend{grid-template-columns:minmax(0,1fr)}}
+
+/* NDCG playground */
+.play{display:grid;gap:14px}
+.play-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.play-label{font-size:14px;color:var(--ink-2);font-weight:500}
+.seg{display:flex;background:var(--surface-2);padding:3px;border-radius:9px}
+.seg button{border:0;background:transparent;min-width:40px;padding:5px 12px;border-radius:6px;font:500 14px var(--mono);color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.slots{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:6px}
+.slots button{width:100%;aspect-ratio:1;max-width:100%;border:1px solid var(--line-strong);background:var(--bg);border-radius:8px;font:500 14px var(--mono);color:var(--ink-2);display:grid;place-items:center;padding:0}
+.slots button:hover{border-color:var(--accent)}
+.slots button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+@media (max-width:480px){.slots{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.play-out{display:flex;flex-wrap:wrap;gap:12px 36px;padding-top:12px;border-top:1px solid var(--line)}
+.play-out div{display:grid}
+.play-out span{font-size:12.5px;color:var(--muted)}
+.play-out b{font:600 28px/1.1 var(--mono);color:var(--ink)}
+.play-math{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+
+/* model entries */
+.models{display:grid;gap:16px}
+.model{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 22px;display:grid;gap:14px;min-width:0}
+.model.ships{border-color:var(--accent-line)}
+.model-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.model-head h3{margin-right:auto}
+.tag{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);white-space:nowrap}
+.tag.ship{display:inline-flex;align-items:center;gap:5px;background:var(--star-soft);color:var(--ink)}
+.model dl{margin:0;display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px 18px}
+.model dt{font:600 11.5px/1.6 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:2px}
+:root[data-lang="zh"] .model dt{letter-spacing:.02em;font-size:12.5px}
+.model dd{margin:0;font-size:15px;color:var(--ink-2);min-width:0}
+.model dd.result{color:var(--ink)}
+.model dd ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
+@media (max-width:600px){.model dl{grid-template-columns:minmax(0,1fr);gap:2px}.model dd{margin-bottom:10px}}
+.clues{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.clues span{font-size:12.5px;background:var(--surface-2);border-radius:6px;padding:3px 8px;color:var(--ink-2)}
+
+/* two-tower diagram */
+.diagram{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.diagram svg{display:block;width:100%;min-width:520px;height:auto;color:var(--ink)}
+.d-box{fill:var(--bg);stroke:var(--line-strong);stroke-width:1.2}
+.d-net{fill:var(--accent-soft);stroke:var(--accent-line);stroke-width:1.2}
+.d-cell{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1}
+.d-out{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+.d-edge{fill:none;stroke:var(--muted);stroke-width:1.4}
+.d-t{font:600 13px var(--body);fill:var(--ink)}
+.d-s{font:400 11.5px var(--body);fill:var(--muted)}
+.d-h{font:700 14px var(--display);fill:var(--ink)}
+.d-e{font:italic 400 11.5px var(--body);fill:var(--muted)}
+.d-arrow{fill:var(--muted)}
+
+/* glossary, credits, references */
+.gloss{margin:0;display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);border-top:1px solid var(--line)}
+.gloss dt,.gloss dd{padding:10px 0;border-bottom:1px solid var(--line);margin:0}
+.gloss dt{font-weight:600;color:var(--ink);padding-right:16px}
+.gloss dd{color:var(--ink-2);font-size:15px}
+@media (max-width:600px){.gloss{grid-template-columns:minmax(0,1fr)}.gloss dt{border-bottom:0;padding-bottom:0}.gloss dd{padding-top:2px}}
+.credit{display:grid;gap:10px;color:var(--ink-2)}
+.credit ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.cite{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:8px;font-size:14.5px}
+.refs{margin:0;padding-left:26px;display:grid;gap:10px;font-size:14.5px;color:var(--ink-2)}
+.refs li::marker{font-family:var(--mono);color:var(--muted);font-size:13px}
+.refs .what{display:inline-block;font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:1px}
+
+footer{border-top:1px solid var(--line);margin-top:24px}
+footer .wrap{padding-block:28px 40px;display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between;font-size:13px;color:var(--muted)}
+footer a{color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <span class="brandmark" aria-hidden="true"><svg viewBox="0 0 24 24"><polygon points="12,2 14.6,7.5 20.66,7 17.2,12 20.66,17 14.6,16.5 12,22 9.4,16.5 3.34,17 6.8,12 3.34,7 9.4,7.5"/></svg></span>
+      <span><strong>Table for You</strong><span class="eyebrow"><span data-l="en">How it works</span><span data-l="zh">系统导读</span></span></span>
+    </a>
+    <nav class="top-links" aria-label="Project">
+      <a data-repo="" href="https://github.com/hanshuo-shuo/chicago-restaurant-recommender">GitHub<span class="gh-arrow" aria-hidden="true"> ↗</span></a>
+      <div class="lang" role="group" aria-label="Language / 语言">
+        <button type="button" id="lang-en" data-set-lang="en" aria-pressed="true">EN</button>
+        <button type="button" id="lang-zh" data-set-lang="zh" aria-pressed="false">中文</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap" id="top">
+  <div class="hero">
+    <div class="hero-text">
+      <span class="eyebrow"><span data-l="en">A plain-language guide to a real recommender</span><span data-l="zh">一个真实推荐系统的入门导读</span></span>
+      <h1><span data-l="en">How Table for You picks 10&nbsp;restaurants out of 7,581</span><span data-l="zh">Table for You 如何从 7,581 家餐厅中挑出 10&nbsp;家</span></h1>
+      <p class="lead" data-l="en">Table for You recommends restaurants in Chicago. You say what you feel like eating and where you are, and it returns a short list with a reason for each pick. This page explains how it works for readers who have never built a recommender: where the data comes from, the simple methods it has to beat, the models we tried, how we tested them, and what we kept.</p>
+      <p class="lead" data-l="zh">Table for You 是一个芝加哥餐厅推荐系统。你说出想吃什么、人在哪里，它返回一份简短的名单，并给出每家店的推荐理由。这一页写给从没做过推荐系统的读者，从头讲清楚：数据从哪里来、模型必须先打败哪些简单方法、我们试了哪些模型、怎样检验它们，以及最后留下了什么。</p>
+      <ul class="facts">
+        <li><b>1.33M</b><span data-l="en">Google Maps ratings</span><span data-l="zh">条 Google 地图评分</span></li>
+        <li><b>106k</b><span data-l="en">people</span><span data-l="zh">位用户</span></li>
+        <li><b>7,581</b><span data-l="en">restaurants</span><span data-l="zh">家餐厅</span></li>
+        <li><b>2016–2019</b><span data-l="en">ratings period</span><span data-l="zh">评分时间范围</span></li>
+      </ul>
+    </div>
+
+    <aside class="example" aria-label="Example request">
+      <div class="example-head">
+        <span class="eyebrow"><span data-l="en">One real request</span><span data-l="zh">一次真实请求</span></span>
+        <span class="count"><span data-l="en">21 pass every rule</span><span data-l="zh">21 家满足全部条件</span></span>
+      </div>
+      <div class="chips">
+        <span class="chip"><span data-l="en">Pizza or Italian</span><span data-l="zh">披萨或意大利菜</span></span>
+        <span class="chip"><span data-l="en">Near Wicker Park</span><span data-l="zh">Wicker Park 附近</span></span>
+        <span class="chip"><span data-l="en">Within 2 km</span><span data-l="zh">2 公里以内</span></span>
+        <span class="chip"><span data-l="en">Up to $$</span><span data-l="zh">价位不超过 $$</span></span>
+      </div>
+      <ol class="picks">
+        <li><span class="rank">01</span><strong>Pequod's Pizza</strong><span class="dist">1.9 km</span>
+          <span class="meta"><span data-l="en">Pizza · $$</span><span data-l="zh">披萨 · $$</span></span></li>
+        <li><span class="rank">02</span><strong>Dimo's Pizza Wicker Park</strong><span class="dist">0.3 km</span>
+          <span class="meta"><span data-l="en">Pizza · $</span><span data-l="zh">披萨 · $</span></span></li>
+        <li><span class="rank">03</span><strong>The Pasta Bowl - Wicker Park</strong><span class="dist">0.5 km</span>
+          <span class="meta"><span data-l="en">Italian · $$</span><span data-l="zh">意大利菜 · $$</span></span></li>
+      </ol>
+      <div class="why">
+        <span class="eyebrow"><span data-l="en">Why #1</span><span data-l="zh">为什么排第 1</span></span>
+        <p data-l="en">Matches your selected cuisine. Price level fits your limit. 1.9 km from your location. Similar to the restaurants and cuisines you picked.</p>
+        <p data-l="zh">符合你选的菜系；价位在你的上限之内；距离你 1.9 公里；与你选的餐厅和菜系相似。</p>
+      </div>
+      <p class="fine" data-l="en">Top 3 from the default model (version <span class="mono">chicago_v2_026df8eaf429</span>). Restaurant names are shown only as factual model output and belong to their owners.</p>
+      <p class="fine" data-l="zh">来自线上默认模型（版本 <span class="mono">chicago_v2_026df8eaf429</span>）的前 3 名。餐厅名称仅作为模型输出的事实展示，归各自所有者。</p>
+    </aside>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="layout">
+    <nav class="rail" aria-label="Sections">
+      <span class="eyebrow"><span data-l="en">The route</span><span data-l="zh">阅读路线</span></span>
+      <ol>
+        <li><a href="#idea"><span data-l="en">The big idea</span><span data-l="zh">核心思路</span></a></li>
+        <li><a href="#data"><span data-l="en">The data</span><span data-l="zh">数据</span></a></li>
+        <li><a href="#grading"><span data-l="en">Grading</span><span data-l="zh">怎样打分</span></a></li>
+        <li><a href="#baselines"><span data-l="en">Baselines</span><span data-l="zh">基线</span></a></li>
+        <li><a href="#models"><span data-l="en">Models</span><span data-l="zh">模型</span></a></li>
+        <li><a href="#results"><span data-l="en">Results</span><span data-l="zh">结果</span></a></li>
+        <li><a href="#choice"><span data-l="en">What ships</span><span data-l="zh">最终选择</span></a></li>
+        <li><a href="#feedback"><span data-l="en">After launch</span><span data-l="zh">上线之后</span></a></li>
+        <li><a href="#limits"><span data-l="en">Limits</span><span data-l="zh">局限</span></a></li>
+        <li><a href="#glossary"><span data-l="en">Glossary</span><span data-l="zh">术语表</span></a></li>
+        <li><a href="#credits"><span data-l="en">Data &amp; copyright</span><span data-l="zh">数据来源与版权</span></a></li>
+        <li><a href="#reading"><span data-l="en">Further reading</span><span data-l="zh">延伸阅读</span></a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <details class="toc">
+        <summary><span data-l="en">Contents</span><span data-l="zh">目录</span></summary>
+        <ol>
+          <li><a href="#idea"><span data-l="en">The big idea</span><span data-l="zh">核心思路</span></a></li>
+          <li><a href="#data"><span data-l="en">The data</span><span data-l="zh">数据</span></a></li>
+          <li><a href="#grading"><span data-l="en">Grading</span><span data-l="zh">怎样打分</span></a></li>
+          <li><a href="#baselines"><span data-l="en">Baselines</span><span data-l="zh">基线</span></a></li>
+          <li><a href="#models"><span data-l="en">Models</span><span data-l="zh">模型</span></a></li>
+          <li><a href="#results"><span data-l="en">Results</span><span data-l="zh">结果</span></a></li>
+          <li><a href="#choice"><span data-l="en">What ships</span><span data-l="zh">最终选择</span></a></li>
+          <li><a href="#feedback"><span data-l="en">After launch</span><span data-l="zh">上线之后</span></a></li>
+          <li><a href="#limits"><span data-l="en">Limits</span><span data-l="zh">局限</span></a></li>
+          <li><a href="#glossary"><span data-l="en">Glossary</span><span data-l="zh">术语表</span></a></li>
+          <li><a href="#credits"><span data-l="en">Data &amp; copyright</span><span data-l="zh">数据来源与版权</span></a></li>
+          <li><a href="#reading"><span data-l="en">Further reading</span><span data-l="zh">延伸阅读</span></a></li>
+        </ol>
+      </details>
+
+      <!-- ============ 1. idea ============ -->
+      <section id="idea">
+        <h2><span data-l="en">The big idea: narrow down, then sort carefully</span><span data-l="zh">核心思路：先粗筛，再精排</span></h2>
+        <p data-l="en">A recommender guesses which few items, out of many, a person is most likely to enjoy. Running an expensive model on every restaurant for every request would be slow, so large systems work like a funnel. Hard rules first remove anything that breaks what you asked for. Cheap methods then pull a couple of hundred plausible <strong>candidates</strong> out of what is left. Finally, a more careful <strong>ranking</strong> model sorts the candidates, and you see the top 10.</p>
+        <p data-l="zh">推荐系统要做的，是在大量选项里猜出某个人最可能喜欢的那几个。每次请求都用一个昂贵的模型给所有餐厅打分太慢，所以大型系统都像漏斗一样工作：先用硬性规则去掉不符合你要求的；再用便宜的方法从剩下的餐厅里快速捞出一两百个<strong>候选</strong>（这一步叫“召回”）；最后用更精细的<strong>排序</strong>模型给候选排序，你看到的是前 10 名。</p>
+        <p data-l="en">Video, shopping and food-delivery apps are built the same way. Table for You builds every stage on real data, so each one can be measured.</p>
+        <p data-l="zh">视频、电商和外卖应用都是这样搭建的。Table for You 用真实数据把每一级都搭了出来，所以每一级都可以被测量。</p>
+
+        <figure>
+          <div class="pipe-grid pipe-top">
+            <div class="pipe-head"><span data-l="en">Stage</span><span data-l="zh">环节</span></div>
+            <div class="pipe-head"><span data-l="en">No filters</span><span data-l="zh">不设条件</span></div>
+            <div class="pipe-head"><span data-l="en">Example</span><span data-l="zh">上面的例子</span></div>
+          </div>
+          <ol class="pipe-list">
+            <li class="stage pipe-grid">
+              <div><b data-l="en">Whole catalog</b><b data-l="zh">全部餐厅</b>
+                <span data-l="en">Every restaurant in Chicago and Evanston</span><span data-l="zh">芝加哥和 Evanston 的所有餐厅</span></div>
+              <div class="num">7,581</div><div class="num">7,581</div>
+            </li>
+            <li class="link"><span data-l="en">remove what breaks your request</span><span data-l="zh">去掉不符合要求的</span></li>
+            <li class="stage pipe-grid">
+              <div><b data-l="en">Business rules</b><b data-l="zh">业务规则</b>
+                <span data-l="en">Cuisine, price, distance, late opening. Permanently closed places are always removed.</span><span data-l="zh">菜系、价位、距离、是否营业到晚上。永久歇业的店总是被去掉。</span></div>
+              <div class="num">6,432</div><div class="num">21</div>
+            </li>
+            <li class="link"><span data-l="en">four sources nominate their best picks</span><span data-l="zh">四路召回各自提名</span></li>
+            <li class="stage pipe-grid">
+              <div><b data-l="en">Candidates</b><b data-l="zh">候选集</b>
+                <span data-l="en">Two-tower 100 · content 50 · most popular 50 · nearby 50, duplicates removed</span><span data-l="zh">双塔 100 · 内容 50 · 最热门 50 · 附近 50，去重</span></div>
+              <div class="num">≈220<small data-l="en">average</small><small data-l="zh">平均</small></div><div class="num">21</div>
+            </li>
+            <li class="link"><span data-l="en">score every candidate</span><span data-l="zh">给每个候选打分</span></li>
+            <li class="stage pipe-grid">
+              <div><b data-l="en">Ranker</b><b data-l="zh">排序模型</b>
+                <span data-l="en">LightGBM weighs 14 clues per restaurant</span><span data-l="zh">LightGBM 综合每家店的 14 个特征</span></div>
+              <div class="num">≈220</div><div class="num">21</div>
+            </li>
+            <li class="link"><span data-l="en">keep the top 10</span><span data-l="zh">取前 10 名</span></li>
+            <li class="stage out pipe-grid">
+              <div><b data-l="en">Your list</b><b data-l="zh">推荐列表</b>
+                <span data-l="en">Each pick comes with its reasons</span><span data-l="zh">每家店附上推荐理由</span></div>
+              <div class="num">10</div><div class="num">10</div>
+            </li>
+          </ol>
+          <figcaption><span data-l="en">One request through the live system. With no filters, 6,432 open restaurants remain and the four sources nominate about 220 of them (the average in offline tests). The example's filters leave only 21, so all 21 go to the ranker.</span><span data-l="zh">一次请求经过线上系统的过程。不设条件时，剩下 6,432 家仍在营业的餐厅，四路召回从中提名约 220 家（离线测试中的平均值）。上面例子的条件只剩 21 家，所以 21 家全部进入排序。</span></figcaption>
+        </figure>
+      </section>
+
+      <!-- ============ 2. data ============ -->
+      <section id="data">
+        <h2><span data-l="en">The data: 1.33 million Google Maps ratings</span><span data-l="zh">数据：133 万条 Google 地图评分</span></h2>
+        <p data-l="en">The project uses <strong>Google Local Data (2021)</strong>, a public research dataset released by the McAuley Lab at UC San Diego. It was collected from Google Maps and covers reviews and business details across the United States up to September 2021. We use only the Illinois files, and only restaurants in Chicago and Evanston. Credits and terms are in <a href="#credits">Data &amp; copyright</a>.</p>
+        <p data-l="zh">项目使用的是 <strong>Google Local Data (2021)</strong>，这是加州大学圣地亚哥分校（UCSD）McAuley 实验室公开发布的研究数据集，采集自 Google 地图，覆盖全美截至 2021 年 9 月的评论和商家信息。我们只用其中伊利诺伊州的文件，并且只保留芝加哥和 Evanston 的餐厅。数据署名和使用条款见<a href="#credits">数据来源与版权</a>。</p>
+        <p data-l="en">Each rating is a small record. Restaurants also come with details: name, categories such as “Pizza restaurant”, map coordinates, price level ($ to $$$$), opening hours, a short description and attribute groups such as Atmosphere and Service options.</p>
+        <p data-l="zh">每条评分都是一条很小的记录。每家餐厅还带有详细信息：名称、类别（如 “Pizza restaurant”）、地图坐标、价位（$ 到 $$$$）、营业时间、简短描述，以及“氛围”“服务方式”等属性分组。</p>
+        <div class="record" aria-label="Illustrative rating record">
+          <span><small data-l="en">person</small><small data-l="zh">用户</small>#48213</span>
+          <span><small data-l="en">restaurant</small><small data-l="zh">餐厅</small>#1207</span>
+          <span><small data-l="en">rating</small><small data-l="zh">评分</small>★★★★★ 5</span>
+          <span><small data-l="en">date</small><small data-l="zh">日期</small>2019-03-14</span>
+        </div>
+        <p class="fine" data-l="en">An illustrative record, not a real one. Real account IDs are replaced with anonymous numbers when the data is loaded.</p>
+        <p class="fine" data-l="zh">示意记录，并非真实数据。加载数据时，真实账号 ID 会被替换为匿名编号。</p>
+
+        <figure>
+          <div class="fig-title"><span data-l="en">From 23 million Illinois ratings to the training set</span><span data-l="zh">从 2,300 万条伊利诺伊州评分到训练数据</span></div>
+          <ol class="ingest">
+            <li><div class="lbl"><span class="main" data-l="en">Ratings of Illinois businesses in the release</span><span class="main" data-l="zh">数据集中伊利诺伊州所有商家的评分</span><span class="sub" data-l="en">179,205 businesses</span><span class="sub" data-l="zh">179,205 个商家</span></div>
+              <div class="n">22,962,330</div><div class="track"><i style="width:100%"></i></div></li>
+            <li><div class="lbl"><span class="main" data-l="en">Ratings of Chicago and Evanston restaurants, 2016–2019</span><span class="main" data-l="zh">2016–2019 年芝加哥和 Evanston 餐厅的评分</span><span class="sub" data-l="en">9,919 restaurants</span><span class="sub" data-l="zh">9,919 家餐厅</span></div>
+              <div class="n">2,373,729</div><div class="track"><i style="width:10.34%"></i></div></li>
+            <li><div class="lbl"><span class="main" data-l="en">After cleaning</span><span class="main" data-l="zh">清洗之后</span><span class="sub" data-l="en">106,215 people · 7,581 restaurants</span><span class="sub" data-l="zh">106,215 位用户 · 7,581 家餐厅</span></div>
+              <div class="n">1,334,979</div><div class="track"><i style="width:5.81%"></i></div></li>
+          </ol>
+          <figcaption><span data-l="en">Bars are to scale. Cleaning keeps each person's latest rating of a restaurant (32,384 repeats collapsed), then keeps people with at least 5 ratings and restaurants with at least 10, repeating until both hold. A model can only learn someone's taste after seeing a few of their ratings.</span><span data-l="zh">柱长按比例绘制。清洗时，每人对同一家店只保留最新一次评分（合并了 32,384 条重复），然后只保留至少评过 5 家店的用户和至少有 10 条评分的餐厅，反复筛选直到两个条件同时成立。模型要先看到一个人的几条评分，才能学到他的口味。</span></figcaption>
+        </figure>
+
+        <h3><span data-l="en">Most ratings are five stars</span><span data-l="zh">大多数评分是 5 星</span></h3>
+        <p data-l="en">57% of ratings are 5 stars and only about 7% are 1 or 2 stars, so a single star rating says little on its own. We count a rating of 4 or 5 as <strong>liked</strong> (82% of ratings). A restaurant someone never rated is unknown, not disliked: they may simply never have written a review.</p>
+        <p data-l="zh">57% 的评分是 5 星，1 星和 2 星加起来只有约 7%，所以单看一个星级说明不了太多。我们把 4 星和 5 星算作<strong>喜欢</strong>（占全部评分的 82%）。一个人没评过的餐厅是“未知”，不是“不喜欢”：他可能只是从没写过评价。</p>
+        <figure id="ratings-fig">
+          <div class="legend">
+            <span class="key"><i style="background:var(--accent)"></i><span data-l="en">Counted as liked</span><span data-l="zh">算作喜欢</span></span>
+            <span class="key"><i style="background:var(--bar)"></i><span data-l="en">Not counted as liked</span><span data-l="zh">不算喜欢</span></span>
+          </div>
+          <div class="bars" style="--grid:33.333%">
+            <div class="row" tabindex="0" data-kind="rating" data-count="762,947" data-share="57.2%"><div class="name">★★★★★ 5</div><div class="plot"><div class="track2"><div class="bar on" style="--v:95.25%"></div><div class="val" style="--end:95.25%">57.2%</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="rating" data-count="329,452" data-share="24.7%"><div class="name">★★★★ 4</div><div class="plot"><div class="track2"><div class="bar on" style="--v:41.13%"></div><div class="val" style="--end:41.13%">24.7%</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="rating" data-count="143,482" data-share="10.7%"><div class="name">★★★ 3</div><div class="plot"><div class="track2"><div class="bar" style="--v:17.92%"></div><div class="val" style="--end:17.92%">10.7%</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="rating" data-count="45,933" data-share="3.4%"><div class="name">★★ 2</div><div class="plot"><div class="track2"><div class="bar" style="--v:5.73%"></div><div class="val" style="--end:5.73%">3.4%</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="rating" data-count="53,165" data-share="4.0%"><div class="name">★ 1</div><div class="plot"><div class="track2"><div class="bar" style="--v:6.64%"></div><div class="val" style="--end:6.64%">4.0%</div></div></div></div>
+          </div>
+          <div class="axis" aria-hidden="true"><div class="axis-name"><span data-l="en">share of ratings</span><span data-l="zh">占全部评分</span></div><div class="ticks"><span style="left:0">0%</span><span style="left:33.333%">20%</span><span style="left:66.667%">40%</span><span style="left:100%">60%</span></div></div>
+          <div class="tip" hidden></div>
+          <figcaption><span data-l="en">All 1,334,979 ratings after cleaning. Counts: 762,947 / 329,452 / 143,482 / 45,933 / 53,165 for 5 down to 1 star.</span><span data-l="zh">清洗后的全部 1,334,979 条评分。5 星到 1 星的条数依次为：762,947 / 329,452 / 143,482 / 45,933 / 53,165。</span></figcaption>
+        </figure>
+
+        <div class="note">
+          <h3><span data-l="en">Ground rules for the data</span><span data-l="zh">数据处理原则</span></h3>
+          <ul data-l="en">
+            <li>Google account IDs are dropped when the data is loaded. People become anonymous numbers.</li>
+            <li>No review text and no photos are used. Only the star rating and its date.</li>
+            <li>Ratings stop at the end of 2019, so pandemic-era behavior (2020–2021) stays out of the test.</li>
+            <li>Google's own average rating and review count are not used. They include ratings written after the test period, which the model would not have known in 2019.</li>
+            <li>The “permanently closed” flag was recorded in 2021. It hides closed places at serving time but is never a model input, because it would tell the model which 2019 restaurants were about to close.</li>
+          </ul>
+          <ul data-l="zh">
+            <li>加载数据时丢弃 Google 账号 ID，用户只保留匿名编号。</li>
+            <li>不使用评论文字，也不使用照片，只用星级和日期。</li>
+            <li>评分截止到 2019 年底，让疫情期间（2020–2021 年）的行为不进入测试。</li>
+            <li>不使用 Google 给出的平均分和评论数。它们包含测试期之后写的评分，而模型在 2019 年是不可能知道这些的。</li>
+            <li>“永久歇业”标记记录于 2021 年。它只在上线时用来隐藏已关门的餐厅，从不作为模型输入，否则模型就会知道哪些 2019 年的餐厅即将关门。</li>
+          </ul>
+        </div>
+        <p data-l="en">A second, much smaller set of 66 Evanston restaurants and 1,436 ratings, where 92% of people have only one rating, tests the <strong>cold-start</strong> case: the system knows almost nothing about you.</p>
+        <p data-l="zh">另有一个小得多的数据集：Evanston 的 66 家餐厅、1,436 条评分，其中 92% 的用户只评过一次。它用来测试<strong>冷启动</strong>，也就是系统几乎不了解你的情况。</p>
+      </section>
+
+      <!-- ============ 3. grading ============ -->
+      <section id="grading">
+        <h2><span data-l="en">How we grade a recommender</span><span data-l="zh">怎样给推荐系统打分</span></h2>
+        <p data-l="en">A fair test pretends we are back in mid-2019. Models learn only from ratings up to 30 June 2019. July to mid-September is used to choose between versions. The final exam is the last three months of 2019, and each model takes it once.</p>
+        <p data-l="zh">公平的检验方法是假装回到 2019 年年中：模型只能从 2019 年 6 月 30 日之前的评分中学习；7 月到 9 月中旬用来在不同版本之间做选择；最后的“期末考试”是 2019 年最后三个月，每个模型只考一次。</p>
+        <figure>
+          <div class="tl-bar" role="img" aria-label="Timeline 2016 to 2019: training until 30 June 2019, validation to 20 September 2019, test to 31 December 2019"><span class="tl-train"></span><span class="tl-val"></span><span class="tl-test"></span></div>
+          <div class="tl-ticks" aria-hidden="true"><span style="left:0">2016</span><span style="left:25.05%">2017</span><span style="left:50.03%">2018</span><span style="left:75.02%">2019</span><span style="left:100%">2020</span></div>
+          <ul class="tl-legend">
+            <li><b><i style="background:var(--tl-train)"></i><span data-l="en">Training</span><span data-l="zh">训练集</span></b><span class="mono">2016-01-01 → 2019-06-30</span><span data-l="en">1,068,556 ratings · models learn here</span><span data-l="zh">1,068,556 条 · 模型在这里学习</span></li>
+            <li><b><i style="background:var(--accent-line)"></i><span data-l="en">Validation</span><span data-l="zh">验证集</span></b><span class="mono">2019-07-01 → 2019-09-20</span><span data-l="en">133,676 ratings · choose between versions</span><span data-l="zh">133,676 条 · 用来挑选版本</span></li>
+            <li><b><i style="background:var(--accent)"></i><span data-l="en">Test</span><span data-l="zh">测试集</span></b><span class="mono">2019-09-21 → 2019-12-31</span><span data-l="en">132,747 ratings · scored once</span><span data-l="zh">132,747 条 · 只评一次</span></li>
+          </ul>
+          <figcaption><span data-l="en">Widths show time. By number of ratings the split is 80 / 10 / 10. Splitting by date, not at random, stops a model from learning from the future.</span><span data-l="zh">宽度表示时间长短；按评分条数算，三段是 80 / 10 / 10。按日期切分而不是随机切分，可以防止模型“偷看”未来。</span></figcaption>
+        </figure>
+
+        <h3><span data-l="en">One test case is one person on one day</span><span data-l="zh">一个测试样本 = 某个人的某一天</span></h3>
+        <p data-l="en">For each person and day in the test period, the model sees only what happened before that day and ranks all 7,581 restaurants. We then check where the restaurants that person rated 4 or 5 stars that day landed in the model's top 10. The test has 20,000 such cases from 10,016 people.</p>
+        <p data-l="zh">对测试期里的每个“人 + 日期”，模型只能看到那一天之前发生的事，然后给全部 7,581 家餐厅排序。接着看这个人当天打了 4 星或 5 星的餐厅，落在了模型前 10 名的哪个位置。测试集共有 20,000 个这样的样本，来自 10,016 个人。</p>
+
+        <h3><span data-l="en">Two scores: Recall@10 and NDCG@10</span><span data-l="zh">两个分数：Recall@10 和 NDCG@10</span></h3>
+        <p data-l="en"><strong>Recall@10</strong> asks how many of the liked restaurants made the top 10. <strong>NDCG@10</strong> also cares about position: a hit at #1 counts fully and a hit lower down counts less. Both run from 0 to 1. Try it below.</p>
+        <p data-l="zh"><strong>Recall@10</strong>（召回率）问的是：喜欢的餐厅有几家进了前 10？<strong>NDCG@10</strong> 还看位置：排第 1 得满分，越往后得分越少。两个分数都在 0 到 1 之间。下面可以动手试试。</p>
+        <figure class="play" id="play">
+          <div class="play-row">
+            <span class="play-label" id="t-label"><span data-l="en">Restaurants this person liked that day</span><span data-l="zh">这个人当天喜欢的餐厅数</span></span>
+            <div class="seg" role="group" aria-labelledby="t-label">
+              <button type="button" id="t1" data-t="1" aria-pressed="false">1</button>
+              <button type="button" id="t2" data-t="2" aria-pressed="true">2</button>
+              <button type="button" id="t3" data-t="3" aria-pressed="false">3</button>
+            </div>
+          </div>
+          <span class="play-label" id="s-label"><span data-l="en">Click the positions where the model placed them</span><span data-l="zh">点击模型把它们排在了第几位</span></span>
+          <ol class="slots" aria-labelledby="s-label">
+            <li><button type="button" id="s1" data-p="1" aria-pressed="false">1</button></li>
+            <li><button type="button" id="s2" data-p="2" aria-pressed="false">2</button></li>
+            <li><button type="button" id="s3" data-p="3" aria-pressed="true">3</button></li>
+            <li><button type="button" id="s4" data-p="4" aria-pressed="false">4</button></li>
+            <li><button type="button" id="s5" data-p="5" aria-pressed="false">5</button></li>
+            <li><button type="button" id="s6" data-p="6" aria-pressed="false">6</button></li>
+            <li><button type="button" id="s7" data-p="7" aria-pressed="false">7</button></li>
+            <li><button type="button" id="s8" data-p="8" aria-pressed="false">8</button></li>
+            <li><button type="button" id="s9" data-p="9" aria-pressed="false">9</button></li>
+            <li><button type="button" id="s10" data-p="10" aria-pressed="false">10</button></li>
+          </ol>
+          <div class="play-out" aria-live="polite">
+            <div><span>Recall@10</span><b id="p-recall">0.50</b></div>
+            <div><span>NDCG@10</span><b id="p-ndcg">0.307</b></div>
+          </div>
+          <p class="play-math" id="p-math">A hit at #3 earns 1/log₂(4) = 0.500. The best case (#1, #2) earns 1.000 + 0.631 = 1.631. NDCG = 0.500 ÷ 1.631 = 0.307.</p>
+        </figure>
+
+        <h3><span data-l="en">Why the real scores look tiny</span><span data-l="zh">为什么真实分数看起来很小</span></h3>
+        <p data-l="en">The best model scores 0.0315 NDCG@10. That sounds poor until you see the task: pick 10 out of 7,581 for people who usually rate one or two places on a given day, and who visit many places they never review. Picking at random would reach a Recall@10 of about 0.0013 (10 ÷ 7,581, calculated rather than measured). The best model reaches 0.056, roughly 40 times that. What matters is the comparison with baselines on the same test.</p>
+        <p data-l="zh">最好的模型 NDCG@10 只有 0.0315，乍看很低，但要看任务有多难：从 7,581 家里挑 10 家，而一个人一天通常只评一两家店，还有很多去过却没评价的店。随机乱选的 Recall@10 约为 0.0013（10 ÷ 7,581，是算出来的而不是实测的）；最好的模型是 0.056，大约是随机的 40 倍。真正有意义的，是在同一套测试下和基线比较。</p>
+
+        <h3><span data-l="en">Error bars</span><span data-l="zh">误差范围</span></h3>
+        <p data-l="en">Every test score comes with a 95% range. We rebuild the test set many times by drawing people at random with replacement (a <strong>bootstrap</strong>) and watch how much the score moves. If two models' ranges overlap, we do not call either one the winner on accuracy.</p>
+        <p data-l="zh">每个测试分数都附有一个 95% 区间。做法叫<strong>自助法</strong>（bootstrap）：从测试用户中有放回地随机抽样，重复很多次，观察分数会波动多少。如果两个模型的区间重叠，就不宣布谁的精度更高。</p>
+      </section>
+
+      <!-- ============ 4. baselines ============ -->
+      <section id="baselines">
+        <h2><span data-l="en">Baselines: the simple methods to beat</span><span data-l="zh">基线：先要打败的简单方法</span></h2>
+        <p data-l="en">A <strong>baseline</strong> is the simplest reasonable answer. If a complex model cannot beat it, the complexity is not paying for itself. We ran three, all scored on the same test.</p>
+        <p data-l="zh"><strong>基线</strong>就是最简单、但说得过去的方法。如果复杂模型连它都打不过，复杂就没有意义。我们跑了三个，用的是同一套测试。</p>
+        <div class="models">
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Highest average rating</span><span data-l="zh">平均分最高</span></h3><span class="tag"><span data-l="en">Baseline</span><span data-l="zh">基线</span></span></div>
+            <dl>
+              <dt><span data-l="en">How it works</span><span data-l="zh">做法</span></dt>
+              <dd data-l="en">Recommend the places with the best average stars, pulled toward the city-wide average so that a place with two 5-star ratings does not top the list (a Bayesian average).</dd>
+              <dd data-l="zh">推荐平均星级最高的餐厅，并把平均分往全市均值方向“拉”，免得只有两条 5 星评价的店排到最前（贝叶斯平均）。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en"><span class="mono">0.0008</span> NDCG@10, close to random. It surfaces small places with a handful of perfect reviews that most people never visit.</dd>
+              <dd class="result" data-l="zh">NDCG@10 <span class="mono">0.0008</span>，接近随机。它推出来的是只有几条满分评价的小店，大多数人根本不会去。</dd>
+            </dl>
+          </article>
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Most popular</span><span data-l="zh">最热门</span></h3><span class="tag"><span data-l="en">Baseline</span><span data-l="zh">基线</span></span></div>
+            <dl>
+              <dt><span data-l="en">How it works</span><span data-l="zh">做法</span></dt>
+              <dd data-l="en">Recommend the 10 restaurants with the most ratings in the training period, to everyone.</dd>
+              <dd data-l="zh">所有人都推荐训练期内评分条数最多的 10 家餐厅。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en"><span class="mono">0.0106</span> NDCG@10, 13 times better than average rating. This is the bar every personalized model has to clear. It shows the same 10 places to everyone.</dd>
+              <dd class="result" data-l="zh">NDCG@10 <span class="mono">0.0106</span>，是“平均分最高”的 13 倍。这是所有个性化模型都必须超过的分数。但它给所有人推荐的都是同样 10 家。</dd>
+            </dl>
+          </article>
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Similar descriptions (content-based)</span><span data-l="zh">描述相似（基于内容）</span></h3><span class="tag"><span data-l="en">Baseline</span><span data-l="zh">基线</span></span></div>
+            <dl>
+              <dt><span data-l="en">How it works</span><span data-l="zh">做法</span></dt>
+              <dd data-l="en">A pretrained language model, MiniLM, turns each restaurant's name, categories, description and tags into a list of 384 numbers (an <strong>embedding</strong>). Similar text gives similar numbers. The system recommends places whose numbers sit closest to the ones you liked.</dd>
+              <dd data-l="zh">用预训练语言模型 MiniLM，把每家餐厅的名称、类别、描述和标签转换成 384 个数字（称为<strong>嵌入向量</strong>）。文字越相似，数字越接近。系统推荐与你喜欢的店最接近的餐厅。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en"><span class="mono">0.0037</span> NDCG@10. Weak on its own in Chicago, where location and habit matter more than descriptions. But it covers far more of the catalog (79% of restaurants appear in someone's top 10), it works for a restaurant with no ratings yet, and on the small Evanston set it beat older TF-IDF word counting by 55%.</dd>
+              <dd class="result" data-l="zh">NDCG@10 <span class="mono">0.0037</span>。在芝加哥单独使用很弱，因为位置和习惯比描述更重要。但它覆盖的餐厅多得多（79% 的餐厅出现在某人的前 10 名里），还没有评分的新店也能推荐；在 Evanston 小数据集上，它比传统的 TF-IDF 词频方法高 55%。</dd>
+            </dl>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ 5. models ============ -->
+      <section id="models">
+        <h2><span data-l="en">The models we built</span><span data-l="zh">我们搭建的模型</span></h2>
+        <p data-l="en">Each model below fills one stage of the funnel. For each one: what it does, an everyday comparison, and what we measured on the test period.</p>
+        <p data-l="zh">下面每个模型负责漏斗中的一级。每个都会讲：它做什么、一个生活中的类比，以及在测试期测到的结果。</p>
+
+        <div class="models">
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Two-tower retrieval</span><span data-l="zh">双塔召回模型</span></h3><span class="tag"><span data-l="en">Candidates</span><span data-l="zh">召回</span></span></div>
+            <dl>
+              <dt><span data-l="en">What it does</span><span data-l="zh">做什么</span></dt>
+              <dd data-l="en">Two small neural networks. One turns you into 64 numbers from your taste (built from the restaurants you liked) and where you usually eat. The other turns each restaurant into 64 numbers from its text, categories and location. The match score is how well the two lists line up (a dot product). Restaurants can be scored ahead of time, so matching against all 7,581 takes about a millisecond. There is no per-person memory, so it also works for someone it has never seen, given a few picks.</dd>
+              <dd data-l="zh">两个小型神经网络。一个根据你的口味（由你喜欢过的餐厅算出）和你常去的区域，把“你”变成 64 个数字；另一个根据文字、类别和位置，把每家餐厅也变成 64 个数字。匹配分数就是两组数字有多“对齐”（点积）。餐厅那一侧可以提前算好，所以和全部 7,581 家做匹配只需约 1 毫秒。它不为每个人单独存参数，所以只要给出几家喜欢的店，从没见过的新用户也能用。</dd>
+              <dt><span data-l="en">Everyday comparison</span><span data-l="zh">类比</span></dt>
+              <dd data-l="en">A matchmaker who writes a profile for each side in the same vocabulary, then compares profiles.</dd>
+              <dd data-l="zh">像一位红娘，用同一套词汇给双方各写一份档案，再比较两份档案有多合拍。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en"><span class="mono">0.0298</span> NDCG@10 on its own, about 2.8× most popular. The live <code>two_tower</code> option mixes its score 85/15 with the restaurant's average rating: <span class="mono">0.0294</span>.</dd>
+              <dd class="result" data-l="zh">单独使用时 NDCG@10 为 <span class="mono">0.0298</span>，约为“最热门”的 2.8 倍。线上的 <code>two_tower</code> 选项把它的分数和餐厅平均分按 85/15 混合，得分 <span class="mono">0.0294</span>。</dd>
+            </dl>
+            <div class="diagram">
+              <svg viewBox="0 0 640 372" role="img" aria-label="Two-tower model: a person tower and a restaurant tower each turn their inputs into 64 numbers; the match score is their dot product divided by a temperature plus a restaurant bias.">
+                <defs><marker id="tt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+                <g data-l="en"><text class="d-h" x="160" y="22" text-anchor="middle">You</text><text class="d-h" x="480" y="22" text-anchor="middle">A restaurant</text></g>
+                <g data-l="zh"><text class="d-h" x="160" y="22" text-anchor="middle">你</text><text class="d-h" x="480" y="22" text-anchor="middle">一家餐厅</text></g>
+                <rect class="d-box" x="30" y="38" width="125" height="54" rx="8"/>
+                <rect class="d-box" x="165" y="38" width="125" height="54" rx="8"/>
+                <rect class="d-box" x="350" y="38" width="80" height="54" rx="8"/>
+                <rect class="d-box" x="440" y="38" width="80" height="54" rx="8"/>
+                <rect class="d-box" x="530" y="38" width="80" height="54" rx="8"/>
+                <g data-l="en">
+                  <text class="d-t" x="92.5" y="61" text-anchor="middle">Taste</text><text class="d-s" x="92.5" y="78" text-anchor="middle">places you liked</text>
+                  <text class="d-t" x="227.5" y="61" text-anchor="middle">Location</text><text class="d-s" x="227.5" y="78" text-anchor="middle">where you eat</text>
+                  <text class="d-t" x="390" y="61" text-anchor="middle">Text</text><text class="d-s" x="390" y="78" text-anchor="middle">MiniLM</text>
+                  <text class="d-t" x="480" y="61" text-anchor="middle">Location</text><text class="d-s" x="480" y="78" text-anchor="middle">map point</text>
+                  <text class="d-t" x="570" y="61" text-anchor="middle">ID code</text><text class="d-s" x="570" y="78" text-anchor="middle">semantic ID</text>
+                </g>
+                <g data-l="zh">
+                  <text class="d-t" x="92.5" y="61" text-anchor="middle">口味</text><text class="d-s" x="92.5" y="78" text-anchor="middle">你喜欢过的店</text>
+                  <text class="d-t" x="227.5" y="61" text-anchor="middle">位置</text><text class="d-s" x="227.5" y="78" text-anchor="middle">你常去的区域</text>
+                  <text class="d-t" x="390" y="61" text-anchor="middle">文字</text><text class="d-s" x="390" y="78" text-anchor="middle">MiniLM</text>
+                  <text class="d-t" x="480" y="61" text-anchor="middle">位置</text><text class="d-s" x="480" y="78" text-anchor="middle">地图坐标</text>
+                  <text class="d-t" x="570" y="61" text-anchor="middle">编码</text><text class="d-s" x="570" y="78" text-anchor="middle">语义 ID</text>
+                </g>
+                <path class="d-edge" d="M92.5,92 V128" marker-end="url(#tt-arrow)"/>
+                <path class="d-edge" d="M227.5,92 V128" marker-end="url(#tt-arrow)"/>
+                <path class="d-edge" d="M390,92 V128" marker-end="url(#tt-arrow)"/>
+                <path class="d-edge" d="M480,92 V128" marker-end="url(#tt-arrow)"/>
+                <path class="d-edge" d="M570,92 V128" marker-end="url(#tt-arrow)"/>
+                <rect class="d-net" x="30" y="130" width="260" height="44" rx="8"/>
+                <rect class="d-net" x="350" y="130" width="260" height="44" rx="8"/>
+                <g data-l="en"><text class="d-t" x="160" y="157" text-anchor="middle">Small neural network</text><text class="d-t" x="480" y="157" text-anchor="middle">Small neural network</text></g>
+                <g data-l="zh"><text class="d-t" x="160" y="157" text-anchor="middle">小型神经网络</text><text class="d-t" x="480" y="157" text-anchor="middle">小型神经网络</text></g>
+                <path class="d-edge" d="M160,174 V206" marker-end="url(#tt-arrow)"/>
+                <path class="d-edge" d="M480,174 V206" marker-end="url(#tt-arrow)"/>
+                <g>
+                  <rect class="d-cell" x="56" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="82" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="108" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="134" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="160" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="186" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="212" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="238" y="208" width="22" height="22" rx="3"/>
+                  <rect class="d-cell" x="376" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="402" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="428" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="454" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="480" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="506" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="532" y="208" width="22" height="22" rx="3"/><rect class="d-cell" x="558" y="208" width="22" height="22" rx="3"/>
+                </g>
+                <g data-l="en"><text class="d-s" x="160" y="248" text-anchor="middle">64 numbers</text><text class="d-s" x="480" y="248" text-anchor="middle">64 numbers, computed ahead for all 7,581</text></g>
+                <g data-l="zh"><text class="d-s" x="160" y="248" text-anchor="middle">64 个数字</text><text class="d-s" x="480" y="248" text-anchor="middle">64 个数字，7,581 家提前算好</text></g>
+                <path class="d-edge" d="M160,256 V276 Q160,290 174,290 H232" marker-end="url(#tt-arrow)"/>
+                <path class="d-edge" d="M480,256 V276 Q480,290 466,290 H408" marker-end="url(#tt-arrow)"/>
+                <g data-l="en"><text class="d-e" x="196" y="282" text-anchor="middle">compare</text><text class="d-e" x="444" y="282" text-anchor="middle">compare</text></g>
+                <g data-l="zh"><text class="d-e" x="196" y="282" text-anchor="middle">比较</text><text class="d-e" x="444" y="282" text-anchor="middle">比较</text></g>
+                <rect class="d-out" x="234" y="264" width="172" height="74" rx="10"/>
+                <g data-l="en"><text class="d-t" x="320" y="292" text-anchor="middle">Match score</text><text class="d-s" x="320" y="310" text-anchor="middle">dot product ÷ 0.05</text><text class="d-s" x="320" y="326" text-anchor="middle">+ restaurant bias</text></g>
+                <g data-l="zh"><text class="d-t" x="320" y="292" text-anchor="middle">匹配分数</text><text class="d-s" x="320" y="310" text-anchor="middle">点积 ÷ 0.05</text><text class="d-s" x="320" y="326" text-anchor="middle">+ 餐厅偏置</text></g>
+                <g data-l="en"><text class="d-s" x="320" y="362" text-anchor="middle">Highest scores become candidates</text></g>
+                <g data-l="zh"><text class="d-s" x="320" y="362" text-anchor="middle">分数最高的进入候选集</text></g>
+              </svg>
+            </div>
+          </article>
+
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">The training fix that mattered most: logQ correction</span><span data-l="zh">最关键的训练技巧：logQ 修正</span></h3><span class="tag"><span data-l="en">Training</span><span data-l="zh">训练</span></span></div>
+            <dl>
+              <dt><span data-l="en">The problem</span><span data-l="zh">问题</span></dt>
+              <dd data-l="en">To learn, the model sees a real visit and must pick that restaurant out from the restaurants of the other 1,023 visits in the same training batch, which act as wrong answers. Popular restaurants show up in batches far more often, so the model is constantly told they are wrong and learns to avoid them.</dd>
+              <dd data-l="zh">训练时，模型看到一次真实的光顾，要从同一批次里其他 1,023 条记录的餐厅中把这家店挑出来，其他餐厅都当作“错误答案”。热门餐厅在批次中出现得多得多，于是模型总被告知它们是错的，最后学会了躲开它们。</dd>
+              <dt><span data-l="en">The fix</span><span data-l="zh">修正</span></dt>
+              <dd data-l="en">During training, subtract the log of each restaurant's popularity from its score, removing the head start it gets from appearing often.</dd>
+              <dd data-l="zh">训练时，从每家餐厅的分数中减去其热度的对数，抵消它因出现频繁而得到的“先天优势”。</dd>
+              <dt><span data-l="en">Everyday comparison</span><span data-l="zh">类比</span></dt>
+              <dd data-l="en">A quiz where the most common answer is usually marked wrong teaches you never to give it. The fix tells the grader how common each answer is.</dd>
+              <dd data-l="zh">如果一场测验里最常见的答案总被判错，你就会学会永远不选它。修正的做法是告诉阅卷人每个答案本来有多常见。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en">NDCG@10 rose from <span class="mono">0.0118</span> to <span class="mono">0.0298</span>, about 2.5×, and matched the slower exact method that compares against all 7,581 restaurants (<span class="mono">0.0316</span>, overlapping ranges).</dd>
+              <dd class="result" data-l="zh">NDCG@10 从 <span class="mono">0.0118</span> 提高到 <span class="mono">0.0298</span>，约为 2.5 倍，并追平了与全部 7,581 家逐一比较的精确方法（<span class="mono">0.0316</span>，区间重叠），而后者更慢。</dd>
+            </dl>
+          </article>
+
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Semantic IDs</span><span data-l="zh">语义 ID</span></h3><span class="tag"><span data-l="en">Restaurant identity</span><span data-l="zh">物品表示</span></span></div>
+            <dl>
+              <dt><span data-l="en">What it does</span><span data-l="zh">做什么</span></dt>
+              <dd data-l="en">Giving every restaurant its own learned vector lets a model memorize it, but costs one row of parameters per restaurant and does nothing for new ones. A Semantic ID is a three-part code built by clustering restaurants on their content: the first part is a broad group, the second narrows it, the third narrows it again. Restaurants that share the start of a code share parameters. We used 3 levels of 64 codes (RQ-KMeans), giving 2,890 distinct codes for 7,581 restaurants. Chain branches with identical descriptions share a code.</dd>
+              <dd data-l="zh">给每家餐厅单独学一个向量，能让模型“记住”它，但每家店都要占一行参数，对新店也毫无帮助。语义 ID 是一个三段式编码：先按内容把餐厅聚类，第一段是大类，第二段再细分，第三段更细。编码开头相同的餐厅共享参数。我们用了 3 层、每层 64 个码（RQ-KMeans），7,581 家餐厅得到 2,890 个不同编码；描述完全相同的连锁分店共用一个编码。</dd>
+              <dt><span data-l="en">Everyday comparison</span><span data-l="zh">类比</span></dt>
+              <dd data-l="en">A library call number: books with nearby numbers sit on nearby shelves and cover similar subjects.</dd>
+              <dd data-l="zh">像图书馆的索书号：编号相近的书放在相邻的书架上，内容也相近。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en">Same accuracy as one vector per restaurant (<span class="mono">0.0318</span> vs <span class="mono">0.0318</span> NDCG@10 in the two-tower) with 47% fewer embedding rows: 4,039 instead of 7,581.</dd>
+              <dd class="result" data-l="zh">与“每家店一个向量”精度相同（双塔中 NDCG@10 都是 <span class="mono">0.0318</span>），但嵌入表少了 47% 的行：4,039 行，而不是 7,581 行。</dd>
+            </dl>
+          </article>
+
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Sequential Transformer</span><span data-l="zh">序列 Transformer</span></h3><span class="tag"><span data-l="en">Offline experiment</span><span data-l="zh">离线实验</span></span></div>
+            <dl>
+              <dt><span data-l="en">What it does</span><span data-l="zh">做什么</span></dt>
+              <dd data-l="en">Reads your last 50 restaurants in order and predicts the next one, the way a language model predicts the next word. This is the idea behind recent “generative recommendation” systems in industry. Ours is small: 2 layers and 2 attention heads, in the style of SASRec.</dd>
+              <dd data-l="zh">按时间顺序读取你最近去过的 50 家餐厅，预测下一家，就像语言模型预测下一个词。这是近年业界“生成式推荐”系统背后的思路。我们的版本很小：2 层、2 个注意力头，采用 SASRec 的结构。</dd>
+              <dt><span data-l="en">Everyday comparison</span><span data-l="zh">类比</span></dt>
+              <dd data-l="en">Guessing the next song from your recent playlist.</dd>
+              <dd data-l="zh">根据你最近的歌单猜下一首歌。</dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en"><span class="mono">0.0299</span> NDCG@10 with Semantic IDs. It matches the two-tower but does not beat it. With 1.3 million ratings the heavier model is not yet worth its cost, so it stays an offline experiment.</dd>
+              <dd class="result" data-l="zh">加上语义 ID 后 NDCG@10 为 <span class="mono">0.0299</span>，追平但没有超过双塔。在 133 万条评分的规模下，更重的模型还不值得它的成本，所以只作为离线实验保留。</dd>
+            </dl>
+          </article>
+
+          <article class="model ships">
+            <div class="model-head"><h3><span data-l="en">Candidate sources + LightGBM ranker</span><span data-l="zh">多路召回 + LightGBM 排序</span></h3><span class="tag"><span data-l="en">Ranking</span><span data-l="zh">排序</span></span><span class="tag ship"><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,2 14.6,7.5 20.66,7 17.2,12 20.66,17 14.6,16.5 12,22 9.4,16.5 3.34,17 6.8,12 3.34,7 9.4,7.5"/></svg><span data-l="en">Ships</span><span data-l="zh">已上线</span></span></div>
+            <dl>
+              <dt><span data-l="en">What it does</span><span data-l="zh">做什么</span></dt>
+              <dd data-l="en">Four sources nominate their best picks among the restaurants that pass your rules: the two-tower (100), content similarity (50), most popular (50) and nearest to you (50). That is about 220 after removing duplicates. LightGBM, a fast library for ensembles of decision trees, then scores each candidate from 14 clues:
+                <div class="clues"><span>two-tower score &amp; rank</span><span>content score &amp; rank</span><span>popularity in training</span><span>popularity in its last 90 days</span><span>Bayesian average rating</span><span>distance from you</span><span>share of your liked places with this cuisine</span><span>price level</span><span>gap to your usual price</span><span>open late</span><span>how many places you rated</span><span>your average rating</span></div></dd>
+              <dd data-l="zh">四路召回各自在符合你条件的餐厅中提名：双塔（100 家）、内容相似（50 家）、最热门（50 家）、离你最近（50 家），去重后约 220 家。然后用 LightGBM（一个快速的决策树集成库）根据 14 个特征给每个候选打分：
+                <div class="clues"><span>双塔分数与排名</span><span>内容分数与排名</span><span>训练期热度</span><span>最后 90 天热度</span><span>贝叶斯平均分</span><span>离你的距离</span><span>你喜欢的店中同菜系的比例</span><span>价位</span><span>与你常去价位的差距</span><span>是否营业到晚上</span><span>你评过多少家店</span><span>你的平均评分</span></div></dd>
+              <dt><span data-l="en">Everyday comparison</span><span data-l="zh">类比</span></dt>
+              <dd data-l="en">Hiring: several recruiters each bring a shortlist, and one interviewer weighs all the evidence on every candidate.</dd>
+              <dd data-l="zh">像招聘：几位招聘官各自带来一份候选名单，再由一位面试官综合所有信息，逐个打分。</dd>
+              <dt><span data-l="en">What we learned</span><span data-l="zh">发现</span></dt>
+              <dd data-l="en"><ul>
+                <li>The textbook ranking loss, LambdaRank, lost to simply ordering candidates by the two-tower score (0.0286 vs 0.0297 on held-out validation users). With one or two liked places among about 220 candidates, its pairwise signal is too thin. A plain pointwise loss, which predicts “liked or not” for each candidate, won at 0.0303 and is what ships.</li>
+                <li>The two-tower rank accounts for 53% of the trees' total gain, a measure of how much each clue is used. Distance is second at 9%. Removing distance costs only 3%, because location already enters through the two-tower and the nearby source.</li>
+                <li>The candidate step sets a ceiling: the four sources contain only about 32% of the restaurants people actually liked, and no ranker can recover the rest.</li>
+              </ul></dd>
+              <dd data-l="zh"><ul>
+                <li>教科书式的排序损失 LambdaRank，反而输给了“直接按双塔分数排序”（在留出的验证用户上 0.0286 对 0.0297）。约 220 个候选里只有一两个是用户喜欢的，成对比较的信号太少。简单的逐点损失（对每个候选预测“喜不喜欢”）以 0.0303 胜出，线上用的就是它。</li>
+                <li>双塔排名占了所有决策树总增益的 53%（增益衡量每个特征被使用的程度）；距离排第二，占 9%。去掉距离只损失 3%，因为位置信息已经通过双塔和“附近”召回进入了模型。</li>
+                <li>召回这一步设了天花板：四路候选只包含用户实际喜欢的餐厅中的约 32%，剩下的任何排序模型都救不回来。</li>
+              </ul></dd>
+              <dt><span data-l="en">Result</span><span data-l="zh">结果</span></dt>
+              <dd class="result" data-l="en"><span class="mono">0.0315</span> NDCG@10, the highest of all, and the widest variety among the personalized models: 34% of restaurants appear in someone's top 10. About 7 ms per request.</dd>
+              <dd class="result" data-l="zh">NDCG@10 <span class="mono">0.0315</span>，所有方法中最高；在个性化模型里推荐的种类也最多：34% 的餐厅出现在某人的前 10 名里。每次请求约 7 毫秒。</dd>
+            </dl>
+          </article>
+
+          <article class="model ships">
+            <div class="model-head"><h3><span data-l="en">Business rules</span><span data-l="zh">业务规则</span></h3><span class="tag"><span data-l="en">Rules</span><span data-l="zh">规则</span></span><span class="tag ship"><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,2 14.6,7.5 20.66,7 17.2,12 20.66,17 14.6,16.5 12,22 9.4,16.5 3.34,17 6.8,12 3.34,7 9.4,7.5"/></svg><span data-l="en">Ships</span><span data-l="zh">已上线</span></span></div>
+            <dl>
+              <dt><span data-l="en">What it does</span><span data-l="zh">做什么</span></dt>
+              <dd data-l="en">Hard filters run before anything else: cuisine, maximum price level, budget, open after 8 pm, maximum distance, and permanently closed. Missing information never counts as a match, so a restaurant with an unknown price never passes a price filter. If nothing passes, the system says so and suggests relaxing a filter instead of quietly dropping one.</dd>
+              <dd data-l="zh">硬性过滤最先执行：菜系、最高价位、预算、晚上 8 点后是否营业、最远距离，以及是否永久歇业。缺失的信息永远不算符合，所以价位未知的餐厅不会通过价位过滤。如果没有任何餐厅符合，系统会明说并建议放宽某个条件，而不是悄悄去掉条件。</dd>
+            </dl>
+          </article>
+
+          <article class="model">
+            <div class="model-head"><h3><span data-l="en">Also in the repository</span><span data-l="zh">仓库里还有</span></h3></div>
+            <dl>
+              <dt><span data-l="en">ANN index</span><span data-l="zh">ANN 索引</span></dt>
+              <dd data-l="en">Approximate nearest-neighbor search looks only at the most promising 20% of restaurants and still finds 94.7% of the exact top 100 (0.32 ms instead of 0.78 ms). Exact search over 7,581 restaurants is already fast, so the index is ready for a bigger catalog but not switched on.</dd>
+              <dd data-l="zh">近似最近邻（ANN）搜索只查看最有希望的 20% 餐厅，仍能找到精确前 100 名中的 94.7%（0.32 毫秒，而精确搜索为 0.78 毫秒）。7,581 家餐厅的精确搜索已经很快，所以这个索引为更大规模准备好了，但目前没有启用。</dd>
+              <dt><span data-l="en">LLM rerank</span><span data-l="zh">LLM 重排</span></dt>
+              <dd data-l="en">This optional mode sends the top 20 to Claude, Anthropic's language model, in two different orders and merges the two rankings, because language models tend to favor whatever is listed first. Any failure falls back to the normal order. It is off by default and has no offline score; its effect would be measured with real users.</dd>
+              <dd data-l="zh">一个可选分支：把前 20 名以两种不同顺序发给 Anthropic 的语言模型 Claude，再合并两次排序，因为语言模型往往偏爱排在前面的选项。任何失败都会退回原来的顺序。它默认关闭，没有离线分数，效果需要用真实用户来衡量。</dd>
+            </dl>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ 6. results ============ -->
+      <section id="results">
+        <h2><span data-l="en">Results on the test period</span><span data-l="zh">测试期结果</span></h2>
+        <p data-l="en">Six approaches ranked the full catalog for the same 20,000 test cases. Bars show NDCG@10 and the thin lines show the 95% range. Hover over or tab to a row for details.</p>
+        <p data-l="zh">六种方法在同样的 20,000 个测试样本上对全部餐厅排序。柱子表示 NDCG@10，细线表示 95% 区间。把鼠标移到某一行（或用 Tab 键选中）可查看详情。</p>
+        <figure id="results-fig">
+          <div class="bars" style="--grid:25%">
+            <div class="group"><span data-l="en">Baselines</span><span data-l="zh">基线</span></div>
+            <div class="row" tabindex="0" data-kind="policy" data-n="0.0008" data-lo="0.0005" data-hi="0.0010" data-r="0.0015" data-c="0.1%"><div class="name"><span data-l="en">Highest average rating</span><span data-l="zh">平均分最高</span></div><div class="plot"><div class="track2"><div class="bar" style="--v:2%"></div><div class="ci" style="--lo:1.25%;--hi:2.5%"></div><div class="val" style="--end:2.5%">0.0008</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="policy" data-n="0.0106" data-lo="0.0097" data-hi="0.0116" data-r="0.0183" data-c="0.1%"><div class="name"><span data-l="en">Most popular</span><span data-l="zh">最热门</span></div><div class="plot"><div class="track2"><div class="bar" style="--v:26.5%"></div><div class="ci" style="--lo:24.25%;--hi:29%"></div><div class="val" style="--end:29%">0.0106</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="policy" data-n="0.0037" data-lo="0.0032" data-hi="0.0043" data-r="0.0075" data-c="79%"><div class="name"><span data-l="en">Similar descriptions</span><span data-l="zh">描述相似</span></div><div class="plot"><div class="track2"><div class="bar" style="--v:9.25%"></div><div class="ci" style="--lo:8%;--hi:10.75%"></div><div class="val" style="--end:10.75%">0.0037</div></div></div></div>
+            <div class="group"><span data-l="en">Models</span><span data-l="zh">模型</span></div>
+            <div class="row" tabindex="0" data-kind="policy" data-n="0.0299" data-lo="0.0283" data-hi="0.0317" data-r="0.0546" data-c="24%"><div class="name"><span data-l="en">Sequential Transformer + Semantic IDs</span><span data-l="zh">序列 Transformer + 语义 ID</span></div><div class="plot"><div class="track2"><div class="bar" style="--v:74.75%"></div><div class="ci" style="--lo:70.75%;--hi:79.25%"></div><div class="val" style="--end:79.25%">0.0299</div></div></div></div>
+            <div class="row" tabindex="0" data-kind="policy" data-n="0.0294" data-lo="0.0277" data-hi="0.0311" data-r="0.0524" data-c="19%"><div class="name"><span data-l="en">Two-tower + rating blend</span><span data-l="zh">双塔 + 平均分混合</span></div><div class="plot"><div class="track2"><div class="bar" style="--v:73.5%"></div><div class="ci" style="--lo:69.25%;--hi:77.75%"></div><div class="val" style="--end:77.75%">0.0294</div></div></div></div>
+            <div class="row served" tabindex="0" data-kind="policy" data-n="0.0315" data-lo="0.0298" data-hi="0.0333" data-r="0.0560" data-c="34%"><div class="name"><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,2 14.6,7.5 20.66,7 17.2,12 20.66,17 14.6,16.5 12,22 9.4,16.5 3.34,17 6.8,12 3.34,7 9.4,7.5"/></svg><span data-l="en">LightGBM ranker (ships)</span><span data-l="zh">LightGBM 排序（已上线）</span></div><div class="plot"><div class="track2"><div class="bar" style="--v:78.75%"></div><div class="ci" style="--lo:74.5%;--hi:83.25%"></div><div class="val" style="--end:83.25%">0.0315</div></div></div></div>
+          </div>
+          <div class="axis" aria-hidden="true"><div class="axis-name">NDCG@10</div><div class="ticks"><span style="left:0">0</span><span style="left:25%">0.01</span><span style="left:50%">0.02</span><span style="left:75%">0.03</span><span style="left:100%">0.04</span></div></div>
+          <div class="tip" hidden></div>
+          <details class="table">
+            <summary><span data-l="en">Show as a table</span><span data-l="zh">以表格查看</span></summary>
+            <div class="scroll">
+              <table>
+                <thead><tr><th><span data-l="en">Approach</span><span data-l="zh">方法</span></th><th class="n">Recall@10</th><th class="n">NDCG@10</th><th class="n"><span data-l="en">95% range</span><span data-l="zh">95% 区间</span></th><th class="n"><span data-l="en">Coverage</span><span data-l="zh">覆盖率</span></th></tr></thead>
+                <tbody>
+                  <tr><td><span data-l="en">Highest average rating</span><span data-l="zh">平均分最高</span></td><td class="n">0.0015</td><td class="n">0.0008</td><td class="n">0.0005–0.0010</td><td class="n">0.1%</td></tr>
+                  <tr><td><span data-l="en">Most popular</span><span data-l="zh">最热门</span></td><td class="n">0.0183</td><td class="n">0.0106</td><td class="n">0.0097–0.0116</td><td class="n">0.1%</td></tr>
+                  <tr><td><span data-l="en">Similar descriptions</span><span data-l="zh">描述相似</span></td><td class="n">0.0075</td><td class="n">0.0037</td><td class="n">0.0032–0.0043</td><td class="n">79%</td></tr>
+                  <tr><td><span data-l="en">Sequential Transformer + Semantic IDs</span><span data-l="zh">序列 Transformer + 语义 ID</span></td><td class="n">0.0546</td><td class="n">0.0299</td><td class="n">0.0283–0.0317</td><td class="n">24%</td></tr>
+                  <tr><td><span data-l="en">Two-tower + rating blend</span><span data-l="zh">双塔 + 平均分混合</span></td><td class="n">0.0524</td><td class="n">0.0294</td><td class="n">0.0277–0.0311</td><td class="n">19%</td></tr>
+                  <tr><td><strong><span data-l="en">LightGBM ranker (ships)</span><span data-l="zh">LightGBM 排序（已上线）</span></strong></td><td class="n">0.0560</td><td class="n">0.0315</td><td class="n">0.0298–0.0333</td><td class="n">34%</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+          <figcaption><span data-l="en">Test period, 20,000 cases from 10,016 people, full catalog of 7,581. Coverage is the share of restaurants that appear in at least one person's top 10.</span><span data-l="zh">测试期，来自 10,016 人的 20,000 个样本，对全部 7,581 家餐厅排序。覆盖率指至少出现在一个人前 10 名中的餐厅所占比例。</span></figcaption>
+        </figure>
+        <ul data-l="en">
+          <li><strong>The ranker scores about 3× the most-popular baseline</strong>, and its range does not overlap with any baseline.</li>
+          <li><strong>The three models are close.</strong> The ranker's lead over the two-tower blend (0.0315 vs 0.0294) is small and their ranges overlap, so accuracy alone does not settle it. The ranker also shows 1.8× the variety (34% vs 19% of the catalog) and uses distance and price directly.</li>
+          <li><strong>Popularity has to mean how often people go.</strong> Ranking by average stars is almost as bad as picking at random.</li>
+        </ul>
+        <ul data-l="zh">
+          <li><strong>排序模型约为“最热门”基线的 3 倍</strong>，且区间与所有基线都不重叠。</li>
+          <li><strong>三个模型很接近。</strong>排序模型相对“双塔 + 平均分混合”的领先（0.0315 对 0.0294）不大，两者区间有重叠，所以单看精度定不了胜负。不过排序模型推荐的种类是后者的 1.8 倍（34% 对 19%），而且直接用上了距离和价位。</li>
+          <li><strong>“热门”必须指去的人多。</strong>按平均星级推荐，几乎和随机乱选一样差。</li>
+        </ul>
+      </section>
+
+      <!-- ============ 7. choice ============ -->
+      <section id="choice">
+        <h2><span data-l="en">What ships, and why</span><span data-l="zh">最终选择及原因</span></h2>
+        <p data-l="en">The live service offers several options, called <strong>arms</strong>, so they can be compared on real traffic. The default is the full funnel. Every choice below was made on the validation period and confirmed once on the test period. When two options were within noise on accuracy, other things decided: cost, variety, and whether the model can serve someone new.</p>
+        <p data-l="zh">线上服务提供几个可选的<strong>分支</strong>（arm），以便在真实流量上对比。默认使用完整的漏斗。下面每个选择都是在验证期做出、在测试期确认一次的。两个方案精度差距在误差范围内时，由其他因素决定：成本、多样性，以及能不能服务新用户。</p>
+        <div class="scroll">
+          <table class="decide">
+            <thead><tr><th><span data-l="en">Option</span><span data-l="zh">方案</span></th><th><span data-l="en">Status</span><span data-l="zh">状态</span></th><th><span data-l="en">Why</span><span data-l="zh">原因</span></th></tr></thead>
+            <tbody>
+              <tr><td><span data-l="en">Rules → four sources → LightGBM ranker</span><span data-l="zh">规则 → 四路召回 → LightGBM 排序</span></td>
+                <td><span class="status ship"><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12,2 14.6,7.5 20.66,7 17.2,12 20.66,17 14.6,16.5 12,22 9.4,16.5 3.34,17 6.8,12 3.34,7 9.4,7.5"/></svg><span data-l="en">Default</span><span data-l="zh">默认</span></span> <code>learned</code></td>
+                <td><span data-l="en">Best test score, the most variety among personalized models, uses distance and price directly. About 7 ms per request.</span><span data-l="zh">测试分数最高，个性化模型中多样性最好，直接利用距离和价位。每次请求约 7 毫秒。</span></td></tr>
+              <tr><td><span data-l="en">Two-tower + rating blend</span><span data-l="zh">双塔 + 平均分混合</span></td>
+                <td><span class="status alt"><span data-l="en">Alternative</span><span data-l="zh">备选</span></span> <code>two_tower</code></td>
+                <td><span data-l="en">Nearly as accurate and simpler. Also the fallback if the ranker is missing.</span><span data-l="zh">精度接近，更简单；排序模型缺失时也由它兜底。</span></td></tr>
+              <tr><td><span data-l="en">Similar descriptions + rating blend</span><span data-l="zh">描述相似 + 平均分混合</span></td>
+                <td><span class="status alt"><span data-l="en">Alternative</span><span data-l="zh">备选</span></span> <code>baseline</code></td>
+                <td><span data-l="en">Works with no history at all. It is the default on the Evanston cold-start set, where the two-tower won validation but lost the test.</span><span data-l="zh">完全没有历史记录也能用。在 Evanston 冷启动数据上它是默认模型，因为那里双塔赢了验证集却输了测试集。</span></td></tr>
+              <tr><td><span data-l="en">Sequential Transformer</span><span data-l="zh">序列 Transformer</span></td>
+                <td><span class="status"><span data-l="en">Offline only</span><span data-l="zh">仅离线</span></span></td>
+                <td><span data-l="en">No gain over the two-tower, and serving it would need PyTorch, which the live service avoids.</span><span data-l="zh">没有超过双塔；而且上线需要 PyTorch，线上服务刻意不依赖它。</span></td></tr>
+              <tr><td><span data-l="en">Exact full-catalog training</span><span data-l="zh">全量精确训练</span></td>
+                <td><span class="status"><span data-l="en">Not used</span><span data-l="zh">未采用</span></span></td>
+                <td><span data-l="en">Same accuracy as the logQ version (overlapping ranges) at a higher training cost.</span><span data-l="zh">与 logQ 版本精度相同（区间重叠），但训练成本更高。</span></td></tr>
+              <tr><td><span data-l="en">ANN index</span><span data-l="zh">ANN 索引</span></td>
+                <td><span class="status"><span data-l="en">Built, off</span><span data-l="zh">已实现，未启用</span></span></td>
+                <td><span data-l="en">Exact search over 7,581 restaurants takes under 1 ms.</span><span data-l="zh">对 7,581 家餐厅精确搜索不到 1 毫秒。</span></td></tr>
+              <tr><td><span data-l="en">LLM rerank</span><span data-l="zh">LLM 重排</span></td>
+                <td><span class="status"><span data-l="en">Off by default</span><span data-l="zh">默认关闭</span></span> <code>llm</code></td>
+                <td><span data-l="en">One API call per request, needs credentials, and has no offline evidence yet.</span><span data-l="zh">每次请求要调用一次 API，需要凭证，目前也没有离线证据。</span></td></tr>
+              <tr><td><span data-l="en">Ranker trained on clicks</span><span data-l="zh">基于点击训练的排序模型</span></td>
+                <td><span class="status"><span data-l="en">Waiting for data</span><span data-l="zh">等待数据</span></span></td>
+                <td><span data-l="en">Needs at least 2,000 impressions and 100 clicks of real traffic.</span><span data-l="zh">需要至少 2,000 次曝光和 100 次真实点击。</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 8. feedback ============ -->
+      <section id="feedback">
+        <h2><span data-l="en">After launch: learning from clicks</span><span data-l="zh">上线之后：从点击中学习</span></h2>
+        <p data-l="en">Ratings only show where people went and chose to write a review. They never show what someone was offered and skipped. So the service logs every recommendation it shows, called an <strong>impression</strong>, with its position and model version, and accepts a click or favorite only if it matches a logged impression. Click-through rates per arm then work as an <strong>A/B test</strong> between options.</p>
+        <p data-l="zh">评分只能告诉我们人们去过、并且写了评价的店，看不到“推荐给他了但他没点”的情况。所以服务会记录每一次展示（称为<strong>曝光</strong>），包括位置和模型版本；只有能对上已记录曝光的点击或收藏才会被接受。各分支的点击率就构成了不同方案之间的 <strong>A/B 测试</strong>。</p>
+        <p data-l="en">People click the top slot more just because it is on top (<strong>position bias</strong>). A ranker trained naively on clicks would learn to repeat whatever the old ranker put first. The repository includes a multi-task model (MMoE) with a separate position tower that absorbs this effect during training and is removed at serving time. On simulated logs it recovers the position effect we planted. It will be trained for real once there is real traffic.</p>
+        <p data-l="zh">人们更爱点第一位，仅仅因为它排在最上面（<strong>位置偏差</strong>）。直接用点击训练的排序模型，会学会重复旧模型的排序。仓库里有一个多任务模型（MMoE），用一个单独的“位置塔”在训练时吸收这种偏差，上线时去掉。在模拟日志上，它能还原我们预设的位置效应。等有了真实流量，才会真正训练它。</p>
+      </section>
+
+      <!-- ============ 9. limits ============ -->
+      <section id="limits">
+        <h2><span data-l="en">Limits</span><span data-l="zh">局限</span></h2>
+        <ul data-l="en">
+          <li><strong>A review is only a stand-in for a visit.</strong> Places people went to without reviewing look the same as places they never went.</li>
+          <li><strong>Restaurant details are a 2021 snapshot</strong> (categories, price, hours) applied to behavior from 2016 to 2019.</li>
+          <li><strong>New users are under-represented in Chicago</strong>, because only people with 5 or more ratings are kept. The Evanston set covers that case, but it is small and its ranges are wide.</li>
+          <li><strong>No offline score measures clicks.</strong> The online numbers in the README screenshots come from scripted demo traffic, not real users.</li>
+        </ul>
+        <ul data-l="zh">
+          <li><strong>评价只是光顾的替代信号。</strong>去过但没评价的店，看起来和没去过的店一样。</li>
+          <li><strong>餐厅信息是 2021 年的快照</strong>（类别、价位、营业时间），却用在 2016–2019 年的行为上。</li>
+          <li><strong>芝加哥数据里新用户偏少</strong>，因为只保留了评过 5 家以上的用户。Evanston 数据集覆盖了这种情况，但样本小，区间很宽。</li>
+          <li><strong>离线分数无法衡量点击。</strong>README 截图里的线上指标来自脚本生成的演示流量，不是真实用户。</li>
+        </ul>
+      </section>
+
+      <!-- ============ 10. glossary ============ -->
+      <section id="glossary">
+        <h2><span data-l="en">Glossary</span><span data-l="zh">术语表</span></h2>
+        <dl class="gloss" data-l="en">
+          <dt>Recommender system</dt><dd>Software that ranks items for a person, using what it knows about the person and the items.</dd>
+          <dt>Catalog</dt><dd>Every item the system can recommend. Here, 7,581 restaurants.</dd>
+          <dt>Candidate generation</dt><dd>The fast first step that picks a few hundred plausible items. Also called retrieval.</dd>
+          <dt>Ranking</dt><dd>The slower, more careful step that puts the candidates in order.</dd>
+          <dt>Embedding</dt><dd>A list of numbers that represents a person or an item, so that similar things get similar numbers.</dd>
+          <dt>Baseline</dt><dd>A simple method used as a yardstick for the complex ones.</dd>
+          <dt>Cold start</dt><dd>Recommending to a person, or recommending an item, with little or no history.</dd>
+          <dt>Data leakage</dt><dd>Letting a model see information it would not have when making a real prediction, such as future ratings.</dd>
+          <dt>Validation and test sets</dt><dd>Data held back from training. Validation is for choosing between models; test is for the final grade, used once.</dd>
+          <dt>Recall@10</dt><dd>The share of liked items that appear in the top 10.</dd>
+          <dt>NDCG@10</dt><dd>Like recall, but hits near the top count more.</dd>
+          <dt>Coverage</dt><dd>The share of the catalog that appears in at least one person's top 10.</dd>
+          <dt>Impression</dt><dd>One item shown to one person in one position.</dd>
+          <dt>A/B test</dt><dd>Splitting real traffic between options and comparing what people do.</dd>
+        </dl>
+        <dl class="gloss" data-l="zh">
+          <dt>推荐系统</dt><dd>根据对人和物品的了解，为某个人给物品排序的软件。</dd>
+          <dt>物品库（catalog）</dt><dd>系统能推荐的全部物品。这里是 7,581 家餐厅。</dd>
+          <dt>召回（candidate generation）</dt><dd>快速挑出几百个可能合适的物品的第一步，也叫检索。</dd>
+          <dt>排序（ranking）</dt><dd>更慢、更精细地给候选排定先后的一步。</dd>
+          <dt>嵌入向量（embedding）</dt><dd>用一串数字表示一个人或一个物品，相似的东西对应相近的数字。</dd>
+          <dt>基线（baseline）</dt><dd>用来衡量复杂方法的简单参照方法。</dd>
+          <dt>冷启动（cold start）</dt><dd>给几乎没有历史记录的人做推荐，或推荐几乎没有历史记录的物品。</dd>
+          <dt>数据泄漏（data leakage）</dt><dd>让模型看到真实预测时本不该有的信息，比如未来的评分。</dd>
+          <dt>验证集与测试集</dt><dd>训练时留出的数据。验证集用来在模型之间做选择；测试集用来打最后的分数，只用一次。</dd>
+          <dt>Recall@10</dt><dd>喜欢的物品中，出现在前 10 名的比例。</dd>
+          <dt>NDCG@10</dt><dd>类似召回率，但排得越靠前的命中，得分越高。</dd>
+          <dt>覆盖率（coverage）</dt><dd>至少出现在一个人前 10 名中的物品，占全部物品的比例。</dd>
+          <dt>曝光（impression）</dt><dd>某个物品在某个位置被展示给某个人一次。</dd>
+          <dt>A/B 测试</dt><dd>把真实流量分给不同方案，比较人们的实际行为。</dd>
+        </dl>
+      </section>
+
+      <!-- ============ 11. credits ============ -->
+      <section id="credits">
+        <h2><span data-l="en">Data sources, credits and copyright</span><span data-l="zh">数据来源、署名与版权</span></h2>
+
+        <div class="credit">
+          <h3><span data-l="en">Main dataset: Google Local Data (2021)</span><span data-l="zh">主要数据：Google Local Data (2021)</span></h3>
+          <p data-l="en">Released by the McAuley Lab at UC San Diego for research: <a href="https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/" rel="noopener">mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal</a>. It contains Google Maps reviews and business information across the United States up to September 2021. The lab's page states no license and asks anyone who uses the data to cite these two papers:</p>
+          <p data-l="zh">由加州大学圣地亚哥分校 McAuley 实验室为研究用途发布：<a href="https://mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal/" rel="noopener">mcauleylab.ucsd.edu/public_datasets/gdrive/googlelocal</a>。数据包含全美截至 2021 年 9 月的 Google 地图评论和商家信息。实验室页面没有声明许可协议，并要求所有使用者引用以下两篇论文：</p>
+          <div class="cite">
+            <div>J. Li, J. Shang, J. McAuley. <strong>UCTopic: Unsupervised Contrastive Learning for Phrase Representations and Topic Mining.</strong> ACL 2022. <a href="https://aclanthology.org/2022.acl-long.426" rel="noopener">ACL Anthology</a></div>
+            <div>A. Yan, Z. He, J. Li, T. Zhang, J. McAuley. <strong>Personalized Showcases: Generating Multi-Modal Explanations for Recommendations.</strong> SIGIR 2023. <a href="https://arxiv.org/abs/2207.00422" rel="noopener">arXiv:2207.00422</a></div>
+          </div>
+          <p data-l="en">How this project uses it:</p>
+          <p data-l="zh">本项目的使用方式：</p>
+          <ul data-l="en">
+            <li>Non-commercially, for research and as a portfolio project.</li>
+            <li>Downloaded from the lab's own server by a script (<code>make download</code>). The data is never committed to the repository or re-hosted.</li>
+            <li>Only ratings, dates and business details for Chicago and Evanston restaurants are kept. Google account IDs are dropped at load time. No review text or photos are used.</li>
+            <li>Only aggregate statistics and the project's own model outputs are published.</li>
+          </ul>
+          <ul data-l="zh">
+            <li>非商业用途，用于研究和个人作品展示。</li>
+            <li>通过脚本（<code>make download</code>）从实验室自己的服务器下载，数据从不提交到代码仓库，也不在别处重新托管。</li>
+            <li>只保留芝加哥和 Evanston 餐厅的评分、日期和商家信息；加载时丢弃 Google 账号 ID；不使用评论文字和照片。</li>
+            <li>只公开汇总统计和本项目自己的模型输出。</li>
+          </ul>
+          <p data-l="en">The ratings and business details were written by Google Maps users and businesses and collected from Google Maps. Rights in that content stay with them. Table for You is an independent project and is not affiliated with or endorsed by Google, UC San Diego, or any restaurant named here.</p>
+          <p data-l="zh">这些评分和商家信息由 Google 地图用户和商家撰写，采集自 Google 地图，相关权利归原作者所有。Table for You 是独立项目，与 Google、加州大学圣地亚哥分校以及文中提到的任何餐厅均无隶属或背书关系。</p>
+        </div>
+
+        <div class="credit">
+          <h3><span data-l="en">Evanston set</span><span data-l="zh">Evanston 数据集</span></h3>
+          <p data-l="en">A small academic ratings workbook (66 restaurants, 1,436 ratings). Its redistribution terms could not be verified, so it is not in the repository, and this page shows only counts and scores computed from it. Reviewer names are replaced with keyed pseudonyms; review text and demographics are dropped at load time.</p>
+          <p data-l="zh">一份小型学术评分表（66 家餐厅、1,436 条评分）。我们无法核实它的再分发条款，所以它不在代码仓库中，本页也只展示由它计算出的数量和分数。评价者姓名在加载时替换为带密钥的化名，评论文字和人口统计信息被丢弃。</p>
+        </div>
+
+        <div class="credit">
+          <h3><span data-l="en">What appears on this page</span><span data-l="zh">本页展示的内容</span></h3>
+          <p data-l="en">Counts, scores, and diagrams and charts drawn for this page from the project's own results. No figures are copied from papers. Restaurant names appear only in the one example of model output at the top; they are business names and trademarks of their owners. The page shows no review text, photos, user names, or Google's descriptions of restaurants.</p>
+          <p data-l="zh">数量、分数，以及根据本项目自身结果为本页绘制的示意图和图表。没有复制任何论文中的图。餐厅名称只出现在页首的那一个模型输出示例中，它们是商家名称，商标归各自所有者。本页不展示任何评论文字、照片、用户名，也不展示 Google 对餐厅的描述文字。</p>
+        </div>
+
+        <div class="credit">
+          <h3><span data-l="en">Pretrained model, software and fonts</span><span data-l="zh">预训练模型、软件与字体</span></h3>
+          <ul data-l="en">
+            <li>Text encoder: <a href="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2" rel="noopener">all-MiniLM-L6-v2</a> from sentence-transformers, Apache License 2.0.</li>
+            <li>Libraries: PyTorch (BSD-3-Clause), sentence-transformers (Apache 2.0), LightGBM (MIT), NumPy (BSD-3-Clause), openpyxl (MIT), pytest (MIT), and the optional anthropic SDK for the LLM mode (Apache 2.0).</li>
+            <li>Fonts: Bricolage Grotesque and IBM Plex, SIL Open Font License 1.1, served by Google Fonts.</li>
+            <li>Methods come from published research, listed under <a href="#reading">Further reading</a>.</li>
+          </ul>
+          <ul data-l="zh">
+            <li>文本编码器：sentence-transformers 的 <a href="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2" rel="noopener">all-MiniLM-L6-v2</a>，Apache License 2.0。</li>
+            <li>软件库：PyTorch（BSD-3-Clause）、sentence-transformers（Apache 2.0）、LightGBM（MIT）、NumPy（BSD-3-Clause）、openpyxl（MIT）、pytest（MIT），以及 LLM 重排可选使用的 anthropic SDK（Apache 2.0）。</li>
+            <li>字体：Bricolage Grotesque 和 IBM Plex，SIL Open Font License 1.1，由 Google Fonts 提供。</li>
+            <li>方法均来自已发表的研究，见<a href="#reading">延伸阅读</a>。</li>
+          </ul>
+        </div>
+
+        <div class="credit">
+          <h3><span data-l="en">Trademarks</span><span data-l="zh">商标</span></h3>
+          <p data-l="en">Google and Google Maps are trademarks of Google LLC. Claude is a trademark of Anthropic. They are named only to describe where data comes from and what an optional feature calls, and naming them implies no endorsement.</p>
+          <p data-l="zh">Google 和 Google Maps 是 Google LLC 的商标，Claude 是 Anthropic 的商标。提及它们只是为了说明数据来源和可选功能调用的服务，不代表任何背书。</p>
+        </div>
+        <div class="credit">
+          <h3><span data-l="en">License</span><span data-l="zh">许可证</span></h3>
+          <p data-l="en">This project's code and this page are released under the MIT License. The license covers the project's own work only; the dataset, pretrained model, fonts and trademarks above stay under their owners' terms.</p>
+          <p data-l="zh">本项目的代码和本页面以 MIT 许可证发布。许可证只覆盖本项目自己的作品；上面提到的数据集、预训练模型、字体和商标仍遵循其所有者的条款。</p>
+        </div>
+
+        <div class="credit">
+          <h3><span data-l="en">If you find this helpful</span><span data-l="zh">如果你觉得有帮助</span></h3>
+          <p data-l="en">Please cite the project (a BibTeX entry is in the README), cite the two dataset papers above whenever you use Google Local Data, and cite the original paper for any method you reuse. Each one is listed under <a href="#reading">Further reading</a>.</p>
+          <p data-l="zh">欢迎引用本项目（BibTeX 见 README）；使用 Google Local Data 时请引用上面两篇数据集论文；复用任何方法时请引用其原始论文，全部列在<a href="#reading">延伸阅读</a>中。</p>
+        </div>
+      </section>
+
+      <!-- ============ 12. reading ============ -->
+      <section id="reading">
+        <h2><span data-l="en">Further reading</span><span data-l="zh">延伸阅读</span></h2>
+        <p data-l="en">The papers behind each part of the system. Tags say where each one is used.</p>
+        <p data-l="zh">系统各部分背后的论文。标签说明它用在哪里。</p>
+        <ol class="refs">
+          <li>X. Yi, J. Yang, L. Hong, D. Z. Cheng, L. Heldt, A. Kumthekar, Z. Zhao, L. Wei, E. Chi. <strong>Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations.</strong> RecSys 2019. <a href="https://research.google/pubs/sampling-bias-corrected-neural-modeling-for-large-corpus-item-recommendations/" rel="noopener">Google Research</a><span class="what">logQ</span></li>
+          <li>A. Singh, T. Vu, et al. <strong>Better Generalization with Semantic IDs: A Case Study in Ranking for Recommendations.</strong> RecSys 2024. <a href="https://arxiv.org/abs/2306.08121" rel="noopener">arXiv:2306.08121</a><span class="what"><span data-l="en">Semantic IDs</span><span data-l="zh">语义 ID</span></span></li>
+          <li>G. Zhou, J. Deng, J. Zhang, et al. <strong>OneRec Technical Report.</strong> arXiv 2025. <a href="https://arxiv.org/abs/2506.13695" rel="noopener">arXiv:2506.13695</a><span class="what">RQ-KMeans</span></li>
+          <li>S. Rajput, N. Mehta, A. Singh, et al. <strong>Recommender Systems with Generative Retrieval.</strong> NeurIPS 2023. <a href="https://arxiv.org/abs/2305.05065" rel="noopener">arXiv:2305.05065</a><span class="what"><span data-l="en">Semantic IDs</span><span data-l="zh">语义 ID</span></span></li>
+          <li>K. Järvelin, J. Kekäläinen. <strong>Cumulated Gain-Based Evaluation of IR Techniques.</strong> ACM TOIS 20(4), 2002. <a href="https://doi.org/10.1145/582415.582418" rel="noopener">doi:10.1145/582415.582418</a><span class="what">NDCG</span></li>
+          <li>B. Efron. <strong>Bootstrap Methods: Another Look at the Jackknife.</strong> The Annals of Statistics 7(1), 1979. <a href="https://doi.org/10.1214/aos/1176344552" rel="noopener">doi:10.1214/aos/1176344552</a><span class="what"><span data-l="en">Error bars</span><span data-l="zh">误差范围</span></span></li>
+          <li>G. Salton, C. Buckley. <strong>Term-Weighting Approaches in Automatic Text Retrieval.</strong> Information Processing &amp; Management 24(5), 1988. <a href="https://doi.org/10.1016/0306-4573(88)90021-0" rel="noopener">doi:10.1016/0306-4573(88)90021-0</a><span class="what">TF-IDF</span></li>
+          <li>A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, I. Polosukhin. <strong>Attention Is All You Need.</strong> NeurIPS 2017. <a href="https://arxiv.org/abs/1706.03762" rel="noopener">arXiv:1706.03762</a><span class="what">Transformer</span></li>
+          <li>W.-C. Kang, J. McAuley. <strong>Self-Attentive Sequential Recommendation.</strong> ICDM 2018. <a href="https://arxiv.org/abs/1808.09781" rel="noopener">arXiv:1808.09781</a><span class="what">Transformer</span></li>
+          <li>J. Zhai, et al. <strong>Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations.</strong> ICML 2024. <a href="https://arxiv.org/abs/2402.17152" rel="noopener">arXiv:2402.17152</a><span class="what">Transformer</span></li>
+          <li>G. Ke, Q. Meng, T. Finley, T. Wang, W. Chen, W. Ma, Q. Ye, T.-Y. Liu. <strong>LightGBM: A Highly Efficient Gradient Boosting Decision Tree.</strong> NeurIPS 2017. <a href="https://proceedings.neurips.cc/paper/2017/file/6449f44a102fde848669bdd9eb6b76fa-Paper.pdf" rel="noopener">Proceedings</a><span class="what"><span data-l="en">Ranker</span><span data-l="zh">排序</span></span></li>
+          <li>C. J. C. Burges. <strong>From RankNet to LambdaRank to LambdaMART: An Overview.</strong> Microsoft Research Technical Report MSR-TR-2010-82, 2010. <a href="https://www.microsoft.com/en-us/research/publication/from-ranknet-to-lambdarank-to-lambdamart-an-overview/" rel="noopener">Microsoft Research</a><span class="what"><span data-l="en">Ranker</span><span data-l="zh">排序</span></span></li>
+          <li>N. Reimers, I. Gurevych. <strong>Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks.</strong> EMNLP 2019. <a href="https://arxiv.org/abs/1908.10084" rel="noopener">arXiv:1908.10084</a><span class="what"><span data-l="en">Text encoder</span><span data-l="zh">文本编码</span></span></li>
+          <li>W. Wang, F. Wei, L. Dong, H. Bao, N. Yang, M. Zhou. <strong>MiniLM: Deep Self-Attention Distillation for Task-Agnostic Compression of Pre-Trained Transformers.</strong> NeurIPS 2020. <a href="https://arxiv.org/abs/2002.10957" rel="noopener">arXiv:2002.10957</a><span class="what"><span data-l="en">Text encoder</span><span data-l="zh">文本编码</span></span></li>
+          <li>Y. Ji, A. Sun, J. Zhang, C. Li. <strong>A Critical Study on Data Leakage in Recommender System Offline Evaluation.</strong> ACM TOIS 41(3), 2023. <a href="https://arxiv.org/abs/2010.11060" rel="noopener">arXiv:2010.11060</a><span class="what"><span data-l="en">Time split</span><span data-l="zh">按时间切分</span></span></li>
+          <li>W. Krichene, S. Rendle. <strong>On Sampled Metrics for Item Recommendation.</strong> KDD 2020. <a href="https://research.google/pubs/on-sampled-metrics-for-item-recommendation/" rel="noopener">Google Research</a><span class="what"><span data-l="en">Full-catalog scoring</span><span data-l="zh">全量评估</span></span></li>
+          <li>M. Ferrari Dacrema, P. Cremonesi, D. Jannach. <strong>Are We Really Making Much Progress? A Worrying Analysis of Recent Neural Recommendation Approaches.</strong> RecSys 2019. <a href="https://arxiv.org/abs/1907.06902" rel="noopener">arXiv:1907.06902</a><span class="what"><span data-l="en">Baselines</span><span data-l="zh">基线</span></span></li>
+          <li>Z. Zhao, L. Hong, L. Wei, J. Chen, A. Nath, S. Andrews, A. Kumthekar, M. Sathiamoorthy, X. Yi, E. Chi. <strong>Recommending What Video to Watch Next: A Multitask Ranking System.</strong> RecSys 2019. <a href="https://doi.org/10.1145/3298689.3346997" rel="noopener">doi:10.1145/3298689.3346997</a><span class="what"><span data-l="en">Position bias</span><span data-l="zh">位置偏差</span></span></li>
+          <li>J. Ma, Z. Zhao, X. Yi, J. Chen, L. Hong, E. Chi. <strong>Modeling Task Relationships in Multi-task Learning with Multi-gate Mixture-of-Experts.</strong> KDD 2018. <a href="https://doi.org/10.1145/3219819.3220007" rel="noopener">doi:10.1145/3219819.3220007</a><span class="what">MMoE</span></li>
+          <li>Y. Hou, J. Zhang, Z. Lin, H. Lu, R. Xie, J. McAuley, W. X. Zhao. <strong>Large Language Models are Zero-Shot Rankers for Recommender Systems.</strong> ECIR 2024. <a href="https://arxiv.org/abs/2305.08845" rel="noopener">arXiv:2305.08845</a><span class="what"><span data-l="en">LLM rerank</span><span data-l="zh">LLM 重排</span></span></li>
+          <li>H. Jégou, M. Douze, C. Schmid. <strong>Product Quantization for Nearest Neighbor Search.</strong> IEEE TPAMI 33(1), 2011. <a href="https://inria.hal.science/inria-00514462" rel="noopener">HAL</a><span class="what">ANN</span></li>
+        </ol>
+      </section>
+    </main>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span data-l="en">Table for You · numbers from model version <span class="mono">chicago_v2_026df8eaf429</span></span>
+    <span data-l="zh">Table for You · 数据来自模型版本 <span class="mono">chicago_v2_026df8eaf429</span></span>
+    <span><a data-repo="" href="https://github.com/hanshuo-shuo/chicago-restaurant-recommender"><span data-l="en">Code and README</span><span data-l="zh">代码与 README</span></a> · <a data-repo="/blob/main/docs/design.md" href="https://github.com/hanshuo-shuo/chicago-restaurant-recommender/blob/main/docs/design.md"><span data-l="en">Design notes</span><span data-l="zh">设计文档</span></a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement;
+
+  /* Repository links: on GitHub Pages (<user>.github.io/<repo>/) point at that repo; otherwise keep the default. */
+  var host = location.hostname.match(/^([\w-]+)\.github\.io$/i);
+  var seg = location.pathname.split('/').filter(Boolean)[0];
+  if (host && seg && !/\.html?$/.test(seg)) {
+    var repo = 'https://github.com/' + host[1] + '/' + seg;
+    document.querySelectorAll('[data-repo]').forEach(function (a) { a.href = repo + a.getAttribute('data-repo'); });
+  }
+
+  /* Language */
+  function lang() { return root.getAttribute('data-lang') === 'zh' ? 'zh' : 'en'; }
+  function setLang(l, remember) {
+    root.setAttribute('data-lang', l);
+    root.lang = l === 'zh' ? 'zh-CN' : 'en';
+    document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-lang') === l));
+    });
+    if (remember) { try { localStorage.setItem('tfy-lang', l); } catch (e) {} }
+    renderPlay();
+  }
+  document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+    b.addEventListener('click', function () { setLang(b.getAttribute('data-set-lang'), true); });
+  });
+
+  /* NDCG playground */
+  var T = 2, hits = [3];
+  var gain = function (p) { return 1 / Math.log2(p + 1); };
+  var f3 = function (x) { return x.toFixed(3); };
+  function renderPlay() {
+    document.querySelectorAll('#play [data-t]').forEach(function (b) { b.setAttribute('aria-pressed', String(+b.getAttribute('data-t') === T)); });
+    document.querySelectorAll('#play [data-p]').forEach(function (b) { b.setAttribute('aria-pressed', String(hits.indexOf(+b.getAttribute('data-p')) >= 0)); });
+    var sorted = hits.slice().sort(function (a, b) { return a - b; });
+    var dcg = sorted.reduce(function (s, p) { return s + gain(p); }, 0);
+    var ideal = [], idcg = 0;
+    for (var i = 1; i <= T; i++) { ideal.push(i); idcg += gain(i); }
+    document.getElementById('p-recall').textContent = (sorted.length / T).toFixed(2);
+    document.getElementById('p-ndcg').textContent = f3(dcg / idcg);
+    var zh = lang() === 'zh', text;
+    var idealTerms = ideal.map(function (p) { return f3(gain(p)); }).join(' + ');
+    var idealPos = ideal.map(function (p) { return '#' + p; }).join(zh ? '、' : ', ');
+    if (!sorted.length) {
+      text = zh ? '没有命中：两个分数都是 0。' : 'No hits, so both scores are 0.';
+    } else {
+      var terms = sorted.map(function (p) { return '1/log₂(' + (p + 1) + ')'; }).join(' + ') + ' = ' + f3(dcg);
+      var pos = sorted.map(function (p) { return '#' + p; }).join(zh ? '、' : ', ');
+      var best = idealTerms + (T > 1 ? ' = ' + f3(idcg) : '');
+      var lead = sorted.length > 1 ? 'Hits at ' + pos + ' earn ' : 'A hit at ' + pos + ' earns ';
+      text = zh
+        ? '命中位置 ' + pos + ' 得分 ' + terms + '。理想情况（' + idealPos + '）得分 ' + best + '。NDCG = ' + f3(dcg) + ' ÷ ' + f3(idcg) + ' = ' + f3(dcg / idcg) + '。'
+        : lead + terms + '. The best case (' + idealPos + ') earns ' + best + '. NDCG = ' + f3(dcg) + ' ÷ ' + f3(idcg) + ' = ' + f3(dcg / idcg) + '.';
+    }
+    document.getElementById('p-math').textContent = text;
+  }
+  document.querySelectorAll('#play [data-t]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      T = +b.getAttribute('data-t');
+      while (hits.length > T) hits.shift();
+      renderPlay();
+    });
+  });
+  document.querySelectorAll('#play [data-p]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var p = +b.getAttribute('data-p'), at = hits.indexOf(p);
+      if (at >= 0) hits.splice(at, 1);
+      else { hits.push(p); if (hits.length > T) hits.shift(); }
+      renderPlay();
+    });
+  });
+
+  /* Chart tooltips: enhance only; every value is also labeled or in a table. */
+  var words = {
+    en: { range: '95% range', ratings: 'ratings', cov: 'Coverage' },
+    zh: { range: '95% 区间', ratings: '条评分', cov: '覆盖率' }
+  };
+  function visibleText(el) {
+    var parts = [];
+    el.querySelectorAll('[data-l="' + lang() + '"]').forEach(function (s) { parts.push(s.textContent); });
+    return parts.length ? parts.join(' ') : el.textContent.trim();
+  }
+  function line(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; n.textContent = text; return n; }
+  document.querySelectorAll('#results-fig, #ratings-fig').forEach(function (fig) {
+    var tip = fig.querySelector('.tip');
+    function show(row) {
+      var w = words[lang()], d = row.dataset;
+      tip.replaceChildren();
+      tip.appendChild(line('div', 't-name', visibleText(row.querySelector('.name'))));
+      if (d.kind === 'policy') {
+        tip.appendChild(line('b', '', 'NDCG@10 ' + d.n));
+        tip.appendChild(line('div', '', w.range + ' ' + d.lo + '–' + d.hi));
+        tip.appendChild(line('div', '', 'Recall@10 ' + d.r + ' · ' + w.cov + ' ' + d.c));
+      } else {
+        tip.appendChild(line('b', '', d.share));
+        tip.appendChild(line('div', '', d.count + (lang() === 'zh' ? ' ' : ' ') + w.ratings));
+      }
+      tip.hidden = false;
+      var fr = fig.getBoundingClientRect(), rr = row.getBoundingClientRect();
+      var top = rr.top - fr.top - tip.offsetHeight - 6;
+      if (top < 4) top = rr.bottom - fr.top + 6;
+      var left = Math.min(Math.max(8, rr.left - fr.left + rr.width * 0.35), fr.width - tip.offsetWidth - 8);
+      tip.style.top = top + 'px';
+      tip.style.left = left + 'px';
+    }
+    function hide() { tip.hidden = true; }
+    fig.querySelectorAll('.row').forEach(function (row) {
+      row.addEventListener('pointerenter', function () { show(row); });
+      row.addEventListener('pointerleave', hide);
+      row.addEventListener('focus', function () { show(row); });
+      row.addEventListener('blur', hide);
+    });
+  });
+
+  /* Rail: mark the section in view */
+  var links = {};
+  document.querySelectorAll('.rail a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        Object.keys(links).forEach(function (id) { links[id].removeAttribute('aria-current'); });
+        if (links[e.target.id]) links[e.target.id].setAttribute('aria-current', 'true');
+      });
+    }, { rootMargin: '-25% 0px -65% 0px' });
+    document.querySelectorAll('main > section').forEach(function (s) { io.observe(s); });
+  }
+
+  var saved = null;
+  try { saved = localStorage.getItem('tfy-lang'); } catch (e) {}
+  setLang(saved === 'zh' || saved === 'en' ? saved : ((navigator.language || '').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en'), false);
+})();
+</script>
+</body>
+</html>

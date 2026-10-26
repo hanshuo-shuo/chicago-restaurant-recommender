@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {localDB} from './local-db.mjs';
+const source=readFileSync('dist/server/index.js','utf8');
+assert(!/course_[0-9a-f]{64}|hmac_secret|exact_duplicate_audit/.test(source),'Private identities or audit data leaked.');
+const module=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const parity=JSON.parse(readFileSync('tests/parity.json','utf8'));
+for(const test of parity){const result=module.recommend(test.preferences,test.model);assert.equal(result.candidate_count,test.candidate_count);assert.deepEqual(result.recommendations.map(x=>x.item_id),test.rows.map(x=>x.item_id));for(let i=0;i<test.rows.length;i++)for(const key of ['ranking_score','retrieval_score'])assert(Math.abs(result.recommendations[i][key]-test.rows[i][key])<=2e-6);}
+const DB=localDB(),sid=crypto.randomUUID(),origin='https://portfolio.example';
+const request=(path,input,headers={})=>module.default.fetch(new Request(origin+path,{method:input?'POST':'GET',headers:{'Content-Type':'application/json',...headers},...(input?{body:JSON.stringify(input)}:{})}),{DB},{});
+const payload={session_id:sid,consent:true,model:'two_tower',preferences:{cuisines:['Chinese'],budget:20,open_after_8pm:true},k:5};
+let response=await request('/api/recommend',payload);assert.equal(response.status,200);const result=await response.json();assert.equal(result.recommendations.length,3);assert.equal(result.model,'two_tower');
+const event={session_id:sid,consent:true,request_id:result.request_id,item_id:result.recommendations[0].item_id,type:'click'};
+assert.equal((await request('/api/events',event)).status,201);assert.equal((await request('/api/events',{...event,type:'favorite'})).status,201);
+assert.equal((await request('/api/events',{...event,session_id:crypto.randomUUID()})).status,400);
+assert.equal((await request('/api/events',{...event,model_version:'forged'})).status,400);
+assert.equal((await request('/api/recommend',{...payload,consent:false})).status,400);
+assert.equal((await request('/api/recommend',{...payload,user_id:'historical-user'})).status,400);
+assert.equal((await request('/api/recommend',payload,{Origin:'https://evil.example'})).status,400);
+assert.equal((await request('/api/recommend',{...payload,preferences:{budget:-1}})).status,400);
+const empty=await (await request('/api/recommend',{...payload,preferences:{budget:1}})).json();assert.equal(empty.recommendations.length,0);
+const health=await (await request('/api/health')).json();assert.deepEqual(health.log_counts,{impressions:3,clicks:1,favorites:1});
+const row=await DB.prepare('SELECT model,model_version,synthetic,source FROM events LIMIT 1').first();assert.equal(row.model,'two_tower');assert.equal(row.model_version,result.model_version);assert.equal(row.synthetic,1);assert.equal(row.source,'portfolio_demo');
+const report=await (await request('/api/metrics')).json();assert.equal(report.test.baseline_ranked.overall.ndcg_at_5,.050194);
+assert.equal((await request('/data/prepared.json')).status,404);
+assert.equal((await module.default.fetch(new Request(origin+'/api/health'),{},{})).status,503);
+DB.close();console.log('PASS: 12 exact model-parity cases; durable feedback, attribution, consent, cross-origin and public-data boundaries.');

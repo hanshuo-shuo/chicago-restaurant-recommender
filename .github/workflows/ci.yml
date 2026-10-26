@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (CPU-only PyTorch)
+        run: pip install --extra-index-url https://download.pytorch.org/whl/cpu -e ".[dev]"
+      # Raw data and trained artifacts are not committed, so the real-data tests skip; synthetic-data tests always run.
+      - name: Test
+        run: pytest -q -rs

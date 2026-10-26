@@ -1,0 +1,9 @@
+.git
+.github
+.venv
+data
+artifacts
+deploy
+docs
+tests
+**/__pycache__

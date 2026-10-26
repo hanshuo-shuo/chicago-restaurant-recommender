@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Table for You · Chicago Restaurant Recommender</title>
+  <meta name="description" content="Multi-stage restaurant recommender for Chicago: two-tower and content retrieval, a learned ranker, business rules and impression-level feedback logging.">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    /* Layout: a sticky top bar carries the brand, the three sections and the service status; Discover is a two-column
+       workbench (query builder | ranked list); the two analytics sections are dense panels with one chart each.
+       Identity: the Chicago flag (sky blue, six-pointed red stars) on cool neutrals; display face for headings and ranks,
+       Plex Sans for reading, Plex Mono for versions, scores and table numbers. */
+    :root{
+      --bg:#F3F6F9;--surface:#FFFFFF;--surface-2:#E9EFF5;--lane-a:#EEF3F8;--lane-b:#F4F5F2;
+      --line:#D3DCE5;--line-strong:#AEBCCB;--ink:#121A23;--ink-2:#36434F;--muted:#5E6C7A;
+      --accent:#1B5CA3;--accent-ink:#FFFFFF;--accent-soft:#DFEBF8;--accent-line:#96B8E0;
+      --star:#C8102E;--star-soft:#FBE4E8;--good:#1C7A4B;--good-soft:#DDF2E6;--warn:#8A5A00;--warn-soft:#FBF0D6;
+      --shadow:0 1px 2px rgba(18,26,35,.05),0 10px 28px rgba(18,26,35,.06);
+      --radius:14px;--radius-sm:8px;
+      --display:"Bricolage Grotesque","Avenir Next","Helvetica Neue",Arial,sans-serif;
+      --body:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+      --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    }
+    @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+      --bg:#0D131A;--surface:#151D26;--surface-2:#1C2631;--lane-a:#18222D;--lane-b:#161D25;
+      --line:#283440;--line-strong:#3B4A5A;--ink:#E7ECF1;--ink-2:#C0CAD5;--muted:#8C99A7;
+      --accent:#7DB2EC;--accent-ink:#0D131A;--accent-soft:#1A2E45;--accent-line:#2F5681;
+      --star:#F07A8A;--star-soft:#3A1B22;--good:#5EC48E;--good-soft:#14301F;--warn:#E6B65C;--warn-soft:#2E2612;
+      --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.35);color-scheme:dark}}
+    :root[data-theme="dark"]{
+      --bg:#0D131A;--surface:#151D26;--surface-2:#1C2631;--lane-a:#18222D;--lane-b:#161D25;
+      --line:#283440;--line-strong:#3B4A5A;--ink:#E7ECF1;--ink-2:#C0CAD5;--muted:#8C99A7;
+      --accent:#7DB2EC;--accent-ink:#0D131A;--accent-soft:#1A2E45;--accent-line:#2F5681;
+      --star:#F07A8A;--star-soft:#3A1B22;--good:#5EC48E;--good-soft:#14301F;--warn:#E6B65C;--warn-soft:#2E2612;
+      --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.35);color-scheme:dark}
+
+    *{box-sizing:border-box}
+    html{-webkit-text-size-adjust:100%}
+    body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 var(--body);font-feature-settings:"ss01"}
+    h1,h2,h3{font-family:var(--display);letter-spacing:-.01em;text-wrap:balance;margin:0}
+    h1{font-size:clamp(28px,3.4vw,40px);line-height:1.1;font-weight:600}
+    h2{font-size:22px;line-height:1.2;font-weight:600}
+    h3{font-size:16px;line-height:1.3;font-weight:600}
+    p{margin:0}
+    a{color:var(--accent)}
+    button,input,select{font:inherit;color:inherit}
+    button{cursor:pointer}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    :is(button,input,select,summary,a,[tabindex]):focus-visible{outline:3px solid var(--accent-line);outline-offset:2px;border-radius:6px}
+    [hidden]{display:none!important}
+    code,.mono{font-family:var(--mono);font-size:.92em}
+    .hint{color:var(--muted);font-size:12.5px;line-height:1.5}
+    .eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+    .skip{position:absolute;left:-999px;top:8px;background:var(--surface);padding:8px 12px;border-radius:8px;z-index:50}
+    .skip:focus{left:16px}
+
+    /* top bar */
+    .topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
+    .topbar-inner{max-width:1320px;margin:auto;display:flex;align-items:center;gap:28px;min-height:64px;padding-block:8px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+    .brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:inherit;min-width:0}
+    .brandmark{width:36px;height:36px;border-radius:10px;background:var(--accent-soft);display:grid;place-items:center;flex-shrink:0}
+    .brandmark svg{width:22px;height:22px;fill:var(--star)}
+    .brand strong{display:block;font-family:var(--display);font-size:18px;font-weight:700;line-height:1.1;letter-spacing:-.01em}
+    .brand .eyebrow{display:block;margin-top:3px;white-space:nowrap}
+    .tabs{display:flex;gap:4px;margin-left:auto;background:var(--surface-2);padding:4px;border-radius:10px}
+    .tab{border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:7px;font-weight:500;white-space:nowrap}
+    .tab:hover{color:var(--ink)}
+    .tab.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+    .status{display:inline-flex;align-items:center;gap:8px;font-size:12px;border:1px solid var(--line);background:var(--surface);padding:6px 11px;border-radius:999px;white-space:nowrap;font-family:var(--mono)}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft);flex-shrink:0}
+    .status.offline .dot{background:var(--star);box-shadow:0 0 0 3px var(--star-soft)}
+
+    .shell{max-width:1320px;margin:auto;padding-block:28px 56px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+
+    /* intro + facts */
+    .intro{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:32px;align-items:end;margin-bottom:26px}
+    .intro p{margin-top:12px;color:var(--ink-2);max-width:60ch;font-size:15px}
+    .facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+    .facts>div{padding:14px 16px;border-left:1px solid var(--line);min-width:0}
+    .facts>div:first-child{border-left:0}
+    .facts dt{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .facts dd{margin:4px 0 0;font-family:var(--display);font-size:22px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .facts dd.mono{font-family:var(--mono);font-size:12px;font-weight:500;padding-top:5px;white-space:normal;word-break:break-all;line-height:1.3}
+    .facts dd small{display:block;font:500 11px/1.3 var(--body);color:var(--muted);margin-top:3px;white-space:normal}
+
+    /* workbench */
+    .workbench{display:grid;grid-template-columns:330px minmax(0,1fr);gap:24px;align-items:start}
+    .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+    .panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:6px;flex-wrap:wrap}
+    .query{position:sticky;top:80px}
+    .field{margin-top:18px;border:0;padding:0;min-width:0}
+    .field-label{display:block;font-weight:600;font-size:13px;margin-bottom:8px}
+    .field-label .hint{font-weight:400;margin-left:4px}
+    legend.field-label{padding:0}
+    .chips{display:flex;flex-wrap:wrap;gap:6px}
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:12px;padding:5px 11px;cursor:pointer;color:var(--ink-2);transition:background .15s,border-color .15s}
+    .chip:hover{border-color:var(--line-strong)}
+    .chip:has(input:checked){background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);font-weight:500}
+    .chip input{appearance:none;width:0;height:0;margin:0}
+    .chip:focus-within{outline:3px solid var(--accent-line);outline-offset:1px}
+    .link{background:none;border:0;padding:0;color:var(--accent);font-weight:500;font-size:13px}
+    .link.small{font-size:12px;margin-top:8px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    select,input[type=search],input[type=number]{width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 11px;background:var(--surface);color:var(--ink);font-size:13px;min-width:0}
+    select:disabled{opacity:.55}
+    .budget{display:flex;align-items:center;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface)}
+    .budget span{padding-left:11px;color:var(--muted)}
+    .budget input{border:0;border-radius:0}
+    .switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:500}
+    .switch input{appearance:none;width:34px;height:20px;border-radius:999px;background:var(--line-strong);position:relative;margin:0;transition:background .15s;flex-shrink:0}
+    .switch input::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s}
+    .switch input:checked{background:var(--accent)}
+    .switch input:checked::after{transform:translateX(14px)}
+    .suggest{position:relative}
+    .suggest-list{position:absolute;z-index:6;left:0;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:var(--shadow);max-height:240px;overflow:auto}
+    .suggest-list button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 11px;font-size:12.5px}
+    .suggest-list button:hover,.suggest-list button:focus{background:var(--surface-2)}
+    .suggest-list small{color:var(--muted);margin-left:6px}
+    .seed-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .seed-tags button{border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:12px;padding:3px 9px}
+    .primary{width:100%;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);padding:12px 14px;margin-top:20px;font-weight:600;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .primary:not(:disabled):hover{filter:brightness(1.08)}
+    .footnote{margin-top:12px;font-size:11.5px;line-height:1.5}
+
+    /* results */
+    .results{min-width:0}
+    .results-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+    .segmented{display:inline-flex;background:var(--surface-2);border-radius:10px;padding:4px;gap:2px;flex-shrink:0}
+    .model-button{border:0;background:transparent;font-size:12.5px;border-radius:7px;padding:7px 12px;color:var(--muted);font-weight:500;white-space:nowrap}
+    .model-button.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+    .meta-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:12px;color:var(--muted);padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:14px}
+    .meta-bar b{color:var(--ink);font-weight:600}
+    .meta-bar .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:600}
+    .meta-bar .pill.fallback{background:var(--warn-soft);color:var(--warn)}
+    .error{background:var(--star-soft);color:var(--star);border:1px solid color-mix(in srgb,var(--star) 35%,transparent);padding:11px 14px;border-radius:10px;margin-bottom:14px;font-size:12.5px}
+    .error:empty{display:none}
+    .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+    .rec{display:grid;grid-template-columns:52px minmax(0,1fr) 190px;gap:0 18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px 16px 16px;transition:border-color .15s,box-shadow .15s}
+    .rec:hover{border-color:var(--line-strong);box-shadow:var(--shadow)}
+    .rec.unknown{border-style:dashed}
+    .rank{font-family:var(--display);font-size:26px;font-weight:600;color:var(--accent);line-height:1;padding-top:2px;font-variant-numeric:tabular-nums}
+    .rank small{display:block;font:600 10px/1 var(--body);letter-spacing:.1em;color:var(--muted);margin-top:6px}
+    .rec-body{min-width:0}
+    .rec-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+    .rec h3{font-size:17px}
+    .tags{display:inline-flex;flex-wrap:wrap;gap:6px}
+    .tag{font-size:11.5px;color:var(--ink-2);background:var(--surface-2);border-radius:6px;padding:2px 7px;white-space:nowrap}
+    .tag.late{color:var(--good);background:var(--good-soft)}
+    .desc{margin-top:6px;color:var(--muted);font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .reasons{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+    .reason{font-size:11.5px;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:3px 9px}
+    .reason.warn{color:var(--warn);background:var(--warn-soft)}
+    .detail{border-top:1px dashed var(--line);margin-top:12px;padding-top:10px;font-size:12px;color:var(--muted);display:grid;gap:4px}
+    .detail code{color:var(--ink)}
+    .rec-side{display:flex;flex-direction:column;justify-content:space-between;gap:12px;align-items:stretch}
+    .score{font-size:11px;color:var(--muted);display:grid;gap:5px}
+    .score .value{display:flex;justify-content:space-between;align-items:baseline}
+    .score b{font-family:var(--mono);font-weight:500;color:var(--ink);font-size:12px}
+    .bar{height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+    .bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+    .actions{display:flex;gap:8px;justify-content:flex-end}
+    .ghost{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font-size:12.5px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+    .ghost:hover{border-color:var(--line-strong);color:var(--ink)}
+    .favorite{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 11px;font-size:12.5px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+    .favorite.saved{color:var(--star);background:var(--star-soft);border-color:color-mix(in srgb,var(--star) 35%,transparent)}
+    .empty{background:var(--surface);border:1px dashed var(--line-strong);border-radius:var(--radius);padding:30px 28px}
+    .empty h3{font-size:18px}
+    .empty p{margin-top:6px}
+    .presets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:18px}
+    .preset{text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.4;color:var(--ink);display:grid;gap:2px}
+    .preset:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+    .preset small{color:var(--muted);font-size:11.5px}
+
+    /* analytics sections */
+    .panel-title{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:18px;flex-wrap:wrap}
+    .panel-title h2{font-size:26px}
+    .panel-title p{margin-top:6px;max-width:72ch}
+    .stack{display:grid;gap:16px}
+    .stack>*,.subgrid>*,.workbench>*{min-width:0}
+    .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;min-width:0}
+    .tile .eyebrow{display:block;margin-bottom:8px}
+    .tile .big{font-family:var(--display);font-size:32px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+    .tile .big small{font:500 13px/1 var(--mono);color:var(--muted);margin-left:6px}
+    .tile p{margin-top:8px;color:var(--muted);font-size:12.5px}
+    .panel h3{margin-bottom:12px}
+    .chart{width:100%;overflow-x:auto}
+    .chart svg{display:block;width:100%;height:auto;min-width:760px;font-family:var(--body)}
+    .chart .grid{stroke:var(--line);stroke-width:1}
+    .chart .axis{fill:var(--muted);font-size:11px}
+    .chart .lbl{fill:var(--ink);font-size:12.5px}
+    .chart .val{fill:var(--ink);font-family:var(--mono);font-size:11.5px}
+    .chart .ci{stroke:var(--ink-2);stroke-width:1.2}
+    .chart .bar-plain{fill:var(--line-strong)}
+    .chart .bar-served{fill:var(--accent)}
+    .chart g.row:hover .bar-plain,.chart g.row:hover .bar-served{filter:brightness(.9)}
+    .legend{display:inline-flex;gap:14px;font-size:12px;color:var(--muted);align-items:center;flex-wrap:wrap}
+    .legend span{white-space:nowrap}
+    .legend i{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
+    .legend .a i{background:var(--accent)}.legend .b i{background:var(--line-strong)}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{color:var(--muted);font-weight:600;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;background:var(--surface-2)}
+    th:not(:first-child),td.number{text-align:right}
+    td.number{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+    tr:last-child td{border-bottom:0}
+    tbody tr.served td{background:color-mix(in srgb,var(--accent-soft) 55%,transparent)}
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+    .badge{display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;background:var(--accent);color:var(--accent-ink);border-radius:5px;padding:2px 6px;margin-left:8px;vertical-align:middle;font-weight:600}
+    .subgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--line);align-items:center}
+    .kv:last-child{border-bottom:0}
+    .kv span{color:var(--muted)}
+    .kv b{font-family:var(--mono);font-weight:500;font-size:12px;white-space:nowrap}
+    .gain{display:grid;grid-template-columns:150px minmax(0,1fr) 52px;gap:10px;align-items:center;font-size:12.5px;padding:5px 0}
+    .gain span{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .gain b{font-family:var(--mono);font-weight:500;font-size:12px;text-align:right}
+    .protocol{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .protocol article{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+    .protocol h3{font-size:15px;margin:6px 0 6px}
+    .protocol p{color:var(--muted);font-size:12.5px}
+    details.raw{font-size:13px;color:var(--muted)}
+    summary{cursor:pointer;font-weight:500;color:var(--ink)}
+    pre{white-space:pre-wrap;word-break:break-word;background:var(--surface-2);padding:16px;border-radius:10px;font:11.5px/1.5 var(--mono);color:var(--ink);max-height:460px;overflow:auto;margin:12px 0 0}
+
+    /* architecture */
+    .diagram{margin:0;padding:18px 18px 14px}
+    .diagram-scroll{overflow-x:auto}
+    .diagram svg{display:block;width:100%;height:auto;min-width:900px}
+    .diagram svg text{font-family:var(--body)}
+    .diagram svg .ad-bg{fill:var(--surface)}
+    .diagram svg .ad-lane{fill:var(--lane-a)}
+    .diagram svg .ad-lane2{fill:var(--lane-b)}
+    .diagram svg .ad-box{fill:var(--surface);stroke:var(--line-strong)}
+    .diagram svg .ad-model{fill:var(--accent-soft);stroke:var(--accent)}
+    .diagram svg .ad-store{fill:var(--surface-2);stroke:var(--line-strong)}
+    .diagram svg .ad-group{fill:transparent;stroke:var(--accent-line)}
+    .diagram svg .ad-edge{stroke:var(--ink-2)}
+    .diagram svg .ad-div{stroke:var(--line-strong)}
+    .diagram svg marker path{fill:var(--ink-2)}
+    .diagram svg .ad-t{fill:var(--ink)}
+    .diagram svg .ad-s,.diagram svg .ad-lab2{fill:var(--muted)}
+    .diagram svg .ad-lab{fill:var(--accent)}
+    .diagram svg .ad-el{fill:var(--ink-2)}
+    .diagram figcaption{margin-top:12px;font-size:12.5px;color:var(--muted)}
+    .stages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;counter-reset:stage}
+    .stages li{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;counter-increment:stage;min-width:0}
+    .stages li::before{content:"0" counter(stage);font-family:var(--display);font-weight:600;color:var(--accent);font-size:13px;letter-spacing:.06em}
+    .stages h3{margin:6px 0 6px;font-size:15px}
+    .stages p{color:var(--muted);font-size:12.5px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .info-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;min-width:0}
+    .info-card h3{margin:6px 0 6px;font-size:15px}
+    .info-card p{color:var(--muted);font-size:12.5px}
+    .dark-card{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+    .dark-card p,.dark-card .eyebrow{color:color-mix(in srgb,var(--bg) 70%,transparent)}
+    .dark-card .eyebrow{color:var(--accent-line)}
+    .log-counts{display:flex;gap:26px;margin-top:14px}
+    .log-counts b{display:block;font-family:var(--display);font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+    .log-counts span{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--bg) 70%,transparent)}
+
+    footer{max-width:1320px;margin:auto;padding-block:18px 28px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);color:var(--muted);font-size:11.5px}
+    .toast{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:12.5px;box-shadow:var(--shadow);z-index:30;max-width:90vw}
+
+    @media (max-width:1080px){
+      .workbench{grid-template-columns:1fr}.query{position:static}
+      .intro{grid-template-columns:1fr}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}.facts>div:nth-child(3){border-left:0}.facts>div:nth-child(n+3){border-top:1px solid var(--line)}
+      .tiles,.protocol,.grid-3{grid-template-columns:1fr 1fr}.stages{grid-template-columns:1fr 1fr}.subgrid{grid-template-columns:1fr}
+    }
+    @media (max-width:720px){
+      .topbar-inner{flex-wrap:wrap;gap:10px 16px}.tabs{order:3;width:100%;margin-left:0}.tab{flex:1;text-align:center;padding:8px 6px;font-size:13px}
+      .brand .eyebrow{display:none}.status{margin-left:auto;font-size:11px}
+      .shell{padding-block:20px 40px}.panel{padding:18px}
+      .rec{grid-template-columns:40px minmax(0,1fr);gap:0 12px;padding:14px}.rank{font-size:20px}
+      .rec-side{grid-column:1/-1;flex-direction:row;align-items:center;margin-top:12px}.score{flex:1}
+      .presets,.tiles,.protocol,.grid-3,.stages{grid-template-columns:1fr}.row{grid-template-columns:1fr}
+      .results-head{flex-direction:column}.panel-title h2{font-size:22px}
+    }
+    @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#discover" aria-label="Table for You, home">
+      <span class="brandmark" aria-hidden="true"><svg viewBox="0 0 24 24"><polygon points="12,2 14.6,7.5 20.66,7 17.2,12 20.66,17 14.6,16.5 12,22 9.4,16.5 3.34,17 6.8,12 3.34,7 9.4,7.5"/></svg></span>
+      <span class="brand-text"><strong>Table for You</strong><span class="eyebrow" id="brand-sub">Chicago restaurant recommender</span></span>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab active" data-tab="discover" aria-current="page">Discover</button>
+      <button class="tab" data-tab="experiments">Offline evaluation</button>
+      <button class="tab" data-tab="pipeline">Architecture</button>
+    </nav>
+    <div class="status" id="status"><i class="dot" aria-hidden="true"></i><span id="service-status">Connecting</span></div>
+  </div>
+</header>
+
+<main id="main" class="shell">
+  <section id="panel-discover" class="tab-panel">
+    <div class="intro">
+      <div>
+        <h1>Find your next table in Chicago.</h1>
+        <p id="hero-text">Pick a cuisine, a neighborhood or a few places you already like. Four candidate generators, hard constraints and a learned ranker build the shortlist; every result you open or save is logged to the arm and slot that produced it.</p>
+      </div>
+      <dl class="facts">
+        <div><dt>Restaurants</dt><dd id="fact-catalog">&mdash;</dd></div>
+        <div><dt>Ratings</dt><dd id="fact-ratings">&mdash;</dd></div>
+        <div><dt>Test NDCG@10</dt><dd id="fact-ndcg">&mdash;</dd></div>
+        <div><dt>Model version</dt><dd class="mono" id="fact-version">&mdash;</dd></div>
+      </dl>
+    </div>
+
+    <div class="workbench">
+      <form class="panel query" id="preferences-form" autocomplete="off">
+        <div class="panel-head"><h2>Build a query</h2><button type="button" class="link" id="reset">Reset</button></div>
+        <p class="hint">New visitors start cold: the query is built from content features and location only.</p>
+        <fieldset class="field"><legend class="field-label">Cuisines <span class="hint">any of</span></legend><div class="chips" id="cuisines"><span class="hint">Loading catalog</span></div><button type="button" class="link small" id="more-cuisines" hidden>Show all cuisines</button></fieldset>
+        <div class="field"><label class="field-label" for="near">Near <span class="hint">optional</span></label><div class="row"><select id="near"><option value="">Anywhere</option></select><select id="radius" aria-label="Maximum distance" disabled><option value="">Any distance</option><option value="1">Within 1 km</option><option value="2">Within 2 km</option><option value="5">Within 5 km</option><option value="10">Within 10 km</option></select></div></div>
+        <div class="field" id="price-field" hidden><label class="field-label" for="price">Price</label><select id="price"><option value="">Any price</option><option value="1">$ only</option><option value="2">$$ or less</option><option value="3">$$$ or less</option></select></div>
+        <div class="field" id="budget-field" hidden><label class="field-label" for="budget">Budget per meal</label><div class="budget"><span>$</span><input id="budget" type="number" min="1" max="10000" step="1" placeholder="No limit" aria-describedby="budget-note"></div><p class="hint" id="budget-note" style="margin-top:6px">Hard filter on average cost per person.</p></div>
+        <div class="field"><label class="switch"><input id="late" type="checkbox"><span>Open after 8 pm</span></label></div>
+        <div class="field suggest"><label class="field-label" for="seed-search">Restaurants you like <span class="hint">optional</span></label><input id="seed-search" type="search" placeholder="Search by name" aria-controls="seed-results"><div class="suggest-list" id="seed-results" hidden></div><div class="seed-tags" id="seed-tags"></div><p class="hint" style="margin-top:7px">Each pick adds its content vector to the query and, if no neighborhood is set, anchors your location.</p></div>
+        <button class="primary" id="recommend-button" type="submit" disabled><span>Get recommendations</span><span aria-hidden="true">&rarr;</span></button>
+        <p class="hint footnote">Anonymous session <code id="session-short"></code>. Nothing identifies you; impressions and clicks are attributed to the arm and slot that produced them.</p>
+      </form>
+
+      <section class="results" aria-labelledby="results-title">
+        <div class="results-head">
+          <div><h2 id="results-title">Recommendations</h2><p class="hint" id="result-summary">Set a few preferences, then compare model arms on the same query.</p></div>
+          <div class="segmented" id="models" role="group" aria-label="Model arm"></div>
+        </div>
+        <div class="meta-bar" id="meta-bar" hidden></div>
+        <div id="error" class="error" role="alert"></div>
+        <ol class="list" id="cards" aria-live="polite">
+          <li class="empty" id="empty-state">
+            <h3>Start with a query</h3>
+            <p class="hint">Choose a cuisine, a neighborhood or a restaurant you like, or run one of these.</p>
+            <div class="presets" id="presets"></div>
+          </li>
+        </ol>
+        <p id="result-limits" class="footnote hint">Scores are relative ranking priorities within one model arm, not predicted ratings, and are not comparable across arms.</p>
+      </section>
+    </div>
+  </section>
+
+  <section id="panel-experiments" class="tab-panel stack" hidden>
+    <div class="panel-title"><div><h2>Offline evaluation</h2><p class="hint">Read live from <code>offline_report.json</code>. Every model choice is made on validation; the test split is scored once, and every policy ranks the full catalog for the same queries.</p></div><button class="ghost" id="refresh-metrics">Refresh report</button></div>
+    <div class="tiles" id="headline-tiles"></div>
+    <div class="panel"><div class="panel-head"><h3 id="chart-title">NDCG on the test split, by policy</h3><span class="legend"><span class="a"><i></i>Served arm</span><span class="b"><i></i>Offline-only arm</span></span></div><div class="chart" id="ndcg-chart"><p class="hint">Loading evaluation report</p></div><p class="hint" style="margin-top:10px">Bars are point estimates; whiskers are 95% user-level bootstrap intervals. Hover a bar for recall and coverage.</p></div>
+    <div class="panel"><h3>Test-set comparison</h3><div id="metrics-content"><p class="hint">Loading evaluation report</p></div></div>
+    <div class="protocol">
+      <article><span class="eyebrow">Protocol</span><h3>Global chronological split</h3><p>80/10/10 by interactions with whole days on one side. Models are trained on the past only; each query uses the user's history strictly before the query day.</p></article>
+      <article><span class="eyebrow">Comparability</span><h3>Same queries, full catalog</h3><p>Every policy ranks the full catalog for the same queries and targets. No sampled negatives; no review text or demographics as inputs.</p></article>
+      <article><span class="eyebrow">Uncertainty</span><h3>User-level bootstrap</h3><p>95% intervals resample users, not queries, so several queries from one user are not treated as independent evidence.</p></article>
+    </div>
+    <div class="subgrid" id="metrics-extra"></div>
+    <div class="panel"><details class="raw"><summary>Full report JSON (protocol, trials, learning curves, data quality)</summary><pre id="metrics-json">Loading</pre></details></div>
+    <p class="hint">Positive label: rating of 4 or more. Unrated restaurants are unobserved, not negatives. Offline metrics are a proxy; production impact is measured with an online A/B test on CTR and favorites.</p>
+  </section>
+
+  <section id="panel-pipeline" class="tab-panel stack" hidden>
+    <div class="panel-title"><div><h2>Architecture</h2><p class="hint">Offline training produces versioned artifacts; the serving path loads them without PyTorch, logs every impression with its request ID, position and model version, and learns from those logs.</p></div><button class="ghost" id="refresh-logs">Refresh logs</button></div>
+    <figure class="panel diagram"><div class="diagram-scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 664" role="img" aria-label="System flow: offline ingestion, features, retrieval models and a LightGBM ranker produce versioned artifacts; online, a request goes through candidate generation, business rules, the ranker and an optional LLM arm; impressions and events are logged and feed per-arm CTR and a position-debiased ranker.">
+<style>
+.ad-t{font:600 12.5px ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#1B2733}
+.ad-s{font:400 10.5px ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#5C6B7A}
+.ad-lab{font:700 10.5px ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#2B6CB0;letter-spacing:1.6px}
+.ad-lab2{font:400 10.5px ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#5C6B7A}
+.ad-el{font:400 10.5px ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#4A5A6A}
+.ad-bg{fill:#FFFFFF}.ad-lane{fill:#F2F5F9}.ad-lane2{fill:#F7F7F4}
+.ad-box{fill:#FFFFFF;stroke:#C5CFDA;stroke-width:1.2}
+.ad-model{fill:#E6F0FA;stroke:#2B6CB0;stroke-width:1.2}
+.ad-store{fill:#EEF1F4;stroke:#9AA7B4;stroke-width:1.2}
+.ad-group{fill:#FBFCFE;stroke:#2B6CB0;stroke-width:1;stroke-dasharray:3 3}
+.ad-opt{stroke-dasharray:5 4}
+.ad-edge{fill:none;stroke:#4A5A6A;stroke-width:1.3}
+.ad-div{stroke:#B9C4CF;stroke-width:1;stroke-dasharray:4 4}
+</style>
+<defs><marker id="ad-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4A5A6A"/></marker></defs>
+<rect class="ad-bg" x="0" y="0" width="1200" height="664" rx="14"/>
+<rect class="ad-lane" x="12" y="14" width="1176" height="300" rx="12"/>
+<text class="ad-lab" x="28" y="40" text-anchor="start">OFFLINE</text>
+<text class="ad-lab2" x="96" y="40" text-anchor="start">training, selection on validation, one scoring of the test split  ·  make data train</text>
+<rect class="ad-box" x="24" y="96" width="150" height="58" rx="8"/>
+<text class="ad-t" x="99.0" y="120.0" text-anchor="middle">Google Local (2021)</text>
+<text class="ad-s" x="99.0" y="135.0" text-anchor="middle">23M Illinois ratings</text>
+<rect class="ad-box" x="204" y="96" width="160" height="58" rx="8"/>
+<text class="ad-t" x="284.0" y="120.0" text-anchor="middle">Ingest &amp; validate</text>
+<text class="ad-s" x="284.0" y="135.0" text-anchor="middle">scope · dedupe · 5/10-core</text>
+<rect class="ad-box" x="394" y="96" width="150" height="58" rx="8"/>
+<text class="ad-t" x="469.0" y="120.0" text-anchor="middle">Chronological split</text>
+<text class="ad-s" x="469.0" y="135.0" text-anchor="middle">train · validation · test</text>
+<rect class="ad-box" x="574" y="96" width="170" height="58" rx="8"/>
+<text class="ad-t" x="659.0" y="120.0" text-anchor="middle">Item features</text>
+<text class="ad-s" x="659.0" y="135.0" text-anchor="middle">MiniLM text · categories · geo</text>
+<rect class="ad-group" x="774" y="52" width="200" height="154" rx="10"/>
+<text class="ad-lab" x="874" y="70" text-anchor="middle">RETRIEVAL MODELS</text>
+<rect class="ad-model" x="786" y="80" width="176" height="34" rx="8"/>
+<text class="ad-t" x="874.0" y="101.5" text-anchor="middle">Two-tower · in-batch + logQ</text>
+<rect class="ad-model" x="786" y="122" width="176" height="34" rx="8"/>
+<text class="ad-t" x="874.0" y="143.5" text-anchor="middle">Semantic IDs · RQ-KMeans</text>
+<rect class="ad-model" x="786" y="164" width="176" height="34" rx="8"/>
+<text class="ad-t" x="874.0" y="185.5" text-anchor="middle">Sequential Transformer</text>
+<rect class="ad-model" x="1004" y="96" width="172" height="58" rx="8"/>
+<text class="ad-t" x="1090.0" y="120.0" text-anchor="middle">LightGBM ranker</text>
+<text class="ad-s" x="1090.0" y="135.0" text-anchor="middle">14 features · loss chosen on val</text>
+<rect class="ad-box" x="774" y="232" width="200" height="50" rx="8"/>
+<text class="ad-t" x="874.0" y="252.0" text-anchor="middle">Offline evaluation</text>
+<text class="ad-s" x="874.0" y="267.0" text-anchor="middle">full catalog · NDCG@10 · 95% CI</text>
+<rect class="ad-store" x="1004" y="232" width="172" height="50" rx="8"/>
+<text class="ad-t" x="1090.0" y="252.0" text-anchor="middle">Versioned artifacts</text>
+<text class="ad-s" x="1090.0" y="267.0" text-anchor="middle">data fingerprint · model version</text>
+<path class="ad-edge" d="M174,125.0 H204" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M364,125.0 H394" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M544,125.0 H574" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M744,125.0 H774" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M974,125.0 H1004" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M874,206 V232" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M1090,154 V232" marker-end="url(#ad-arrow)"/>
+<text class="ad-el" x="1082" y="222" text-anchor="end">weights · trees · report</text>
+<line class="ad-div" x1="12" y1="322" x2="1188" y2="322"/>
+<rect class="ad-lane2" x="12" y="330" width="1176" height="322" rx="12"/>
+<text class="ad-lab" x="28" y="354" text-anchor="start">ONLINE</text>
+<text class="ad-lab2" x="90" y="354" text-anchor="start">serving, logging and learning from feedback  ·  make serve</text>
+<rect class="ad-group" x="194" y="366" width="790" height="104" rx="10"/>
+<text class="ad-lab" x="974" y="382" text-anchor="end">INFERENCE ENGINE  ·  NumPy + LightGBM, no PyTorch at serving time</text>
+<rect class="ad-box" x="24" y="390" width="150" height="58" rx="8"/>
+<text class="ad-t" x="99.0" y="414.0" text-anchor="middle">POST /api/recommend</text>
+<text class="ad-s" x="99.0" y="429.0" text-anchor="middle">cuisines · location · price · seeds</text>
+<rect class="ad-box" x="204" y="390" width="160" height="58" rx="8"/>
+<text class="ad-t" x="284.0" y="414.0" text-anchor="middle">Candidate generation</text>
+<text class="ad-s" x="284.0" y="429.0" text-anchor="middle">4 sources · ≈220 candidates</text>
+<rect class="ad-box" x="394" y="390" width="150" height="58" rx="8"/>
+<text class="ad-t" x="469.0" y="414.0" text-anchor="middle">Business rules</text>
+<text class="ad-s" x="469.0" y="429.0" text-anchor="middle">cuisine · distance · price · hours</text>
+<rect class="ad-model" x="574" y="390" width="170" height="58" rx="8"/>
+<text class="ad-t" x="659.0" y="414.0" text-anchor="middle">LightGBM ranker</text>
+<text class="ad-s" x="659.0" y="429.0" text-anchor="middle">fallback: fixed blend</text>
+<rect class="ad-box ad-opt" x="774" y="390" width="200" height="58" rx="8"/>
+<text class="ad-t" x="874.0" y="414.0" text-anchor="middle">LLM rerank · optional arm</text>
+<text class="ad-s" x="874.0" y="429.0" text-anchor="middle">2 orders · Borda merge · fallback</text>
+<rect class="ad-box" x="1004" y="390" width="172" height="58" rx="8"/>
+<text class="ad-t" x="1090.0" y="414.0" text-anchor="middle">Top-k + explanations</text>
+<text class="ad-s" x="1090.0" y="429.0" text-anchor="middle">model version · latency</text>
+<path class="ad-edge" d="M174,419.0 H204" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M364,419.0 H394" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M544,419.0 H574" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M744,419.0 H774" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M974,419.0 H1004" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M1090,282 V340 H880 V366" marker-end="url(#ad-arrow)"/>
+<text class="ad-el" x="1076" y="335" text-anchor="end">loaded at startup, verified against the data fingerprint</text>
+<rect class="ad-box" x="24" y="528" width="150" height="56" rx="8"/>
+<text class="ad-t" x="99.0" y="551.0" text-anchor="middle">POST /api/events</text>
+<text class="ad-s" x="99.0" y="566.0" text-anchor="middle">click · favorite</text>
+<rect class="ad-store" x="204" y="506" width="300" height="100" rx="8"/>
+<text class="ad-t" x="354.0" y="544.5" text-anchor="middle">Impression log · SQLite</text>
+<text class="ad-s" x="354.0" y="559.5" text-anchor="middle">request · position · scores · model version</text>
+<text class="ad-s" x="354.0" y="572.5" text-anchor="middle">events accepted only against a logged impression</text>
+<rect class="ad-model" x="574" y="506" width="170" height="44" rx="8"/>
+<text class="ad-t" x="659.0" y="523.0" text-anchor="middle">Debiased feedback ranker</text>
+<text class="ad-s" x="659.0" y="538.0" text-anchor="middle">MMoE + position tower</text>
+<rect class="ad-box" x="574" y="562" width="170" height="44" rx="8"/>
+<text class="ad-t" x="659.0" y="579.0" text-anchor="middle">Per-arm CTR · favorite rate</text>
+<text class="ad-s" x="659.0" y="594.0" text-anchor="middle">A/B readout</text>
+<path class="ad-edge" d="M174,556 H204" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M504,556 H540 V528 H574" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M540,556 V584 H574" marker-end="url(#ad-arrow)"/>
+<path class="ad-edge" d="M1090,448 V626 H354 V606" marker-end="url(#ad-arrow)"/>
+<text class="ad-el" x="720" y="620" text-anchor="middle">one impression row per returned item</text>
+<path class="ad-edge ad-opt" d="M659,506 V470" marker-end="url(#ad-arrow)"/>
+<text class="ad-el" x="668" y="492" text-anchor="start">swaps in once real traffic reaches 2k impressions</text>
+</svg></div><figcaption>Offline: ingestion, chronological split, item features, three retrieval models and a LightGBM ranker, evaluated on the full catalog. Online: candidate generation, business rules, the ranker and an optional LLM arm; impressions and events feed per-arm CTR and a position-debiased ranker.</figcaption></figure>
+    <ol class="stages">
+      <li><h3>Retrieve candidates</h3><p id="retrieval-note">Two-tower (logQ-corrected, location-aware), content, nearby and most-popular sources score the full catalog exactly and are merged into about 220 candidates.</p></li>
+      <li><h3>Apply constraints</h3><p>Hard filters for cuisine, distance, price and hours; closed restaurants are excluded. Unknown metadata never satisfies a filter, and an empty result is explained rather than silently relaxed.</p></li>
+      <li><h3>Rank</h3><p>A LightGBM ranker, objective chosen on validation, scores the candidate union with retrieval scores, distance, price fit and cuisine affinity. A fixed blend is the fallback arm.</p></li>
+      <li><h3>Observe</h3><p>Log impressions with request, position, scores and model version. A click or favorite is accepted only if it matches a logged impression from the same session.</p></li>
+    </ol>
+    <div class="grid-3">
+      <article class="info-card dark-card"><span class="eyebrow">Event store</span><h3>One request, traceable signals</h3><p>SQLite (WAL), anonymous session UUIDs. Events join impressions on request ID, so every click names the arm and slot that earned it.</p><div class="log-counts"><div><b id="impression-count">&mdash;</b><span>Impressions</span></div><div><b id="click-count">&mdash;</b><span>Clicks</span></div><div><b id="favorite-count">&mdash;</b><span>Favorites</span></div></div></article>
+      <article class="info-card"><span class="eyebrow">Cold start</span><h3>Ask for taste, then collect signals</h3><p>New users pick cuisines, a neighborhood and seed restaurants. New items are retrievable on day one through content features and Semantic IDs; no user-ID embedding is needed.</p></article>
+      <article class="info-card"><span class="eyebrow">From logs</span><h3>Debiased learning</h3><p>Impression logs feed a multi-task (click, favorite) ranker whose shallow position tower absorbs position bias, so the learned ranking reflects utility rather than slot.</p></article>
+    </div>
+    <div class="panel"><h3>Online metrics by model</h3><div id="online-content"><p class="hint">Loading</p></div></div>
+  </section>
+</main>
+<footer><span>Table for You &middot; multi-stage restaurant recommender</span><span>Data: Google Local Data (2021), UCSD McAuley Lab (Li et al., ACL 2022; Yan et al., SIGIR 2023). Restaurant names and descriptions come from Google Maps and belong to their owners.</span><span>Python &middot; NumPy &middot; PyTorch &middot; LightGBM &middot; SQLite</span></footer>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const MODEL_LABELS = {baseline: 'Content', two_tower: 'Two-tower', learned: 'Learned ranker', llm: 'LLM rerank'};
+const VISIBLE_CUISINES = 14;
+const PRESETS = {
+  chicago: [
+    {title: 'Pizza or Italian near Wicker Park', note: 'within 2 km', cuisines: ['Pizza restaurant', 'Italian restaurant'], near: 'Wicker Park', radius: 2},
+    {title: 'Sushi in River North, open late', note: 'after 8 pm', cuisines: ['Sushi restaurant', 'Japanese restaurant'], near: 'River North', radius: 2, late: true},
+    {title: 'Mexican in Logan Square', note: '$$ or less', cuisines: ['Mexican restaurant'], near: 'Logan Square', radius: 2, price: 2},
+    {title: 'Coffee near The Loop', note: 'within 1 km', cuisines: ['Coffee shop', 'Cafe'], near: 'The Loop', radius: 1},
+  ],
+  evanston: [
+    {title: 'Cafes near campus', note: 'Northwestern', cuisines: ['Cafe', 'Coffee shop'], near: 'Northwestern campus'},
+    {title: 'Dinner downtown, open late', note: 'after 8 pm', near: 'Downtown Evanston', late: true},
+  ],
+};
+const state = {info: null, report: null, seeds: new Map(), favorites: new Set(), model: null, result: null, busy: false, session: null, location: null, allCuisines: false};
+const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const svgNode = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v); return e; };
+try { state.favorites = new Set(JSON.parse(localStorage.getItem('table-for-you-favorites') || '[]')); state.session = sessionStorage.getItem('table-for-you-session'); } catch (_) {}
+if (!state.session) { state.session = crypto.randomUUID(); try { sessionStorage.setItem('table-for-you-session', state.session); } catch (_) {} }
+$('session-short').textContent = state.session.slice(0, 8);
+
+function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').hidden = true, 3300); }
+async function api(path, body) {
+  const response = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {});
+  let data; try { data = await response.json(); } catch (_) { throw Error('The service returned an invalid response.'); }
+  if (!response.ok) throw Error(data.error || 'Request failed. Please retry.');
+  return data;
+}
+const fmt = (value, digits = 4) => value === null || value === undefined || Number.isNaN(value) ? '—' : typeof value === 'number' ? (Number.isInteger(value) ? value.toLocaleString() : value.toFixed(digits)) : String(value);
+const pct = (value, digits = 1) => typeof value === 'number' ? `${(value * 100).toFixed(digits)}%` : '—';
+
+/* ---------- query builder ---------- */
+function updateButton() { $('recommend-button').disabled = state.busy || !state.info; $('recommend-button').firstElementChild.textContent = state.busy ? 'Retrieving and ranking' : 'Get recommendations'; }
+function renderSeeds() {
+  $('seed-tags').replaceChildren();
+  for (const [id, name] of state.seeds) { const b = node('button', '', `${name} ×`); b.type = 'button'; b.setAttribute('aria-label', `Remove ${name}`); b.onclick = () => { state.seeds.delete(id); renderSeeds(); }; $('seed-tags').append(b); }
+}
+function renderCuisines() {
+  const list = state.info.cuisines, checked = new Set([...$('cuisines').querySelectorAll('input:checked')].map(x => x.value));
+  $('cuisines').replaceChildren();
+  list.forEach((cuisine, i) => {
+    const label = node('label', 'chip'); const check = node('input'); check.type = 'checkbox'; check.value = cuisine; check.checked = checked.has(cuisine);
+    label.append(check, node('span', '', cuisine)); label.hidden = !state.allCuisines && i >= VISIBLE_CUISINES && !check.checked; $('cuisines').append(label);
+  });
+  const more = $('more-cuisines'); more.hidden = list.length <= VISIBLE_CUISINES;
+  more.textContent = state.allCuisines ? 'Show fewer cuisines' : `Show all ${list.length} cuisines`;
+}
+$('more-cuisines').onclick = () => { state.allCuisines = !state.allCuisines; renderCuisines(); };
+function preferences() {
+  const p = {cuisines: [...$('cuisines').querySelectorAll('input:checked')].map(x => x.value), open_after_8pm: $('late').checked, seed_item_ids: [...state.seeds.keys()], exclude_seen: true};
+  if (!$('budget-field').hidden && $('budget').value) p.budget = Number($('budget').value);
+  if (!$('price-field').hidden && $('price').value) p.max_price_level = Number($('price').value);
+  if (state.location) p.location = state.location;
+  if (state.location && $('radius').value) p.max_distance_km = Number($('radius').value);
+  return p;
+}
+function setNear(value) {
+  $('near').value = value; $('radius').disabled = !value;
+  if (!value) { state.location = null; return; }
+  if (value === 'gps') {
+    navigator.geolocation.getCurrentPosition(pos => { state.location = {latitude: pos.coords.latitude, longitude: pos.coords.longitude}; toast('Using your current location.'); },
+      () => { toast('Location unavailable; choose a neighborhood instead.'); setNear(''); });
+    return;
+  }
+  const spot = state.info.locations[Number(value)];
+  state.location = {latitude: spot.latitude, longitude: spot.longitude};
+}
+$('near').addEventListener('change', e => setNear(e.target.value));
+function resetForm() {
+  $('cuisines').querySelectorAll('input').forEach(x => x.checked = false); setNear(''); $('radius').value = ''; $('price').value = ''; $('budget').value = ''; $('late').checked = false; state.seeds.clear(); renderSeeds(); renderCuisines();
+}
+$('reset').onclick = resetForm;
+function applyQuery(q) {
+  // q: {cuisines: [], near: name|index, radius, price, budget, late, model}
+  resetForm();
+  const available = new Set(state.info.cuisines);
+  for (const c of q.cuisines || []) { if (!available.has(c)) continue; const input = [...$('cuisines').querySelectorAll('input')].find(x => x.value === c); if (input) input.checked = true; }
+  if (q.near !== undefined && q.near !== '') {
+    const index = /^\d+$/.test(String(q.near)) ? Number(q.near) : state.info.locations.findIndex(s => s.name.toLowerCase() === String(q.near).toLowerCase());
+    if (index >= 0 && index < state.info.locations.length) { setNear(String(index)); if (q.radius) $('radius').value = String(q.radius); }
+  }
+  if (q.price && !$('price-field').hidden) $('price').value = String(q.price);
+  if (q.budget && !$('budget-field').hidden) $('budget').value = String(q.budget);
+  if (q.late) $('late').checked = true;
+  if (q.model && state.info.models.includes(q.model)) { state.model = q.model; renderModels(); }
+  renderCuisines();
+}
+function renderPresets() {
+  $('presets').replaceChildren();
+  const available = new Set(state.info.cuisines), spots = new Set(state.info.locations.map(s => s.name));
+  for (const preset of PRESETS[state.info.dataset] || []) {
+    if ((preset.cuisines || []).some(c => !available.has(c)) || (preset.near && !spots.has(preset.near))) continue;
+    const b = node('button', 'preset'); b.type = 'button'; b.append(node('span', '', preset.title), node('small', '', preset.note));
+    b.onclick = () => { applyQuery(preset); recommend(); }; $('presets').append(b);
+  }
+}
+function queryFromUrl() {
+  const q = new URLSearchParams(location.search); if (![...q.keys()].length) return null;
+  return {cuisines: (q.get('cuisines') || '').split(',').map(s => s.trim()).filter(Boolean), near: q.get('near') ?? '', radius: q.get('radius'), price: q.get('price'), budget: q.get('budget'), late: ['1', 'true'].includes(q.get('late') || ''), model: q.get('model'), run: ['1', 'true'].includes(q.get('run') || '')};
+}
+
+/* ---------- models ---------- */
+function renderModels() {
+  $('models').replaceChildren();
+  for (const model of state.info.models) {
+    const b = node('button', `model-button${model === state.model ? ' active' : ''}`, MODEL_LABELS[model] || model);
+    b.type = 'button'; b.dataset.model = model; b.setAttribute('aria-pressed', String(model === state.model));
+    b.onclick = () => { if (state.busy) return; state.model = model; renderModels(); if (state.result) recommend(); };
+    $('models').append(b);
+  }
+}
+async function loadInfo() {
+  try {
+    const info = state.info = await api('/api/info');
+    state.model = info.default_model;
+    $('fact-catalog').textContent = info.catalog_size.toLocaleString();
+    $('fact-version').textContent = info.model_version || '—';
+    $('brand-sub').textContent = info.dataset === 'chicago' ? 'Chicago restaurant recommender' : 'Evanston restaurant recommender';
+    if (info.dataset !== 'chicago') document.querySelector('h1').textContent = 'Find your next table in Evanston.';
+    renderCuisines();
+    for (const [i, spot] of info.locations.entries()) { const o = node('option', '', spot.name); o.value = String(i); $('near').append(o); }
+    if (navigator.geolocation) { const o = node('option', '', 'My current location'); o.value = 'gps'; $('near').append(o); }
+    $('price-field').hidden = !info.has_price_level; $('budget-field').hidden = !info.has_budget;
+    renderModels(); renderPresets(); updateButton();
+    const q = queryFromUrl();
+    if (q) { applyQuery(q); if (q.run || q.cuisines.length || q.near) await recommend(); }
+  } catch (e) { $('error').textContent = e.message; $('cuisines').textContent = 'Catalog currently unavailable.'; }
+}
+let searchTimer;
+$('seed-search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  const text = e.target.value.trim();
+  if (text.length < 2) { $('seed-results').hidden = true; return; }
+  searchTimer = setTimeout(async () => {
+    try {
+      const {results} = await api('/api/search?q=' + encodeURIComponent(text));
+      $('seed-results').replaceChildren();
+      for (const r of results) { const b = node('button', '', r.name); b.type = 'button'; b.append(node('small', '', [r.cuisine, r.city].filter(Boolean).join(' · '))); b.onclick = () => { if (state.seeds.size >= 20) { toast('Choose up to 20 restaurants.'); return; } state.seeds.set(r.item_id, r.name); renderSeeds(); $('seed-search').value = ''; $('seed-results').hidden = true; }; $('seed-results').append(b); }
+      if (!results.length) $('seed-results').append(node('button', '', 'No matching restaurant'));
+      $('seed-results').hidden = false;
+    } catch (_) { $('seed-results').hidden = true; }
+  }, 150);
+});
+document.addEventListener('click', e => { if (!e.target.closest('.suggest')) $('seed-results').hidden = true; });
+
+/* ---------- results ---------- */
+async function logEvent(item, type) { return api('/api/events', {session_id: state.session, request_id: state.result.request_id, item_id: item.item_id, type}); }
+function priceText(item) { return item.price_level ? '$'.repeat(item.price_level) : item.average_cost != null ? `About $${Number(item.average_cost).toFixed(0)}` : null; }
+function renderResults(result) {
+  state.result = result; $('cards').replaceChildren();
+  const rows = result.recommendations || [];
+  const applied = result.model || state.model, requested = result.requested_model || state.model;
+  $('result-summary').textContent = `${fmt(result.candidate_count)} restaurants satisfy every constraint; showing the top ${rows.length}.`;
+  const meta = $('meta-bar'); meta.replaceChildren(); meta.hidden = false;
+  const pill = node('span', `pill${applied !== requested ? ' fallback' : ''}`, `${MODEL_LABELS[applied] || applied}${applied !== requested ? ' (fallback)' : ''}`);
+  meta.append(pill, node('span', 'mono', result.model_version || '—'));
+  if (typeof result.latency_ms === 'number') { const s = node('span', ''); s.append('latency ', node('b', 'mono', `${result.latency_ms.toFixed(1)} ms`)); meta.append(s); }
+  const src = result.location_source === 'request' ? 'location from the selected neighborhood' : result.location_source === 'seeds' ? 'location anchored on the restaurants you picked' : 'no location';
+  meta.append(node('span', '', src), node('span', '', result.context === 'cold_start_global_prior' ? 'no preferences, so popularity decides' : 'personalized from your preferences'));
+  if (!rows.length) { const empty = node('li', 'empty'); empty.append(node('h3', '', 'No restaurants match these constraints'), node('p', 'hint', 'Relax the cuisine, distance, price or hours filters. Restaurants with unknown price or hours never satisfy those filters.')); $('cards').append(empty); }
+  const top = Math.max(...rows.map(r => typeof r.ranking_score === 'number' ? r.ranking_score : 0), 1e-9);
+  rows.forEach((item, index) => {
+    const unknown = item.metadata_status === 'review_only';
+    const card = node('li', `rec${unknown ? ' unknown' : ''}`);
+    const rank = node('div', 'rank', String(index + 1).padStart(2, '0')); rank.append(node('small', '', 'pick'));
+    const body = node('div', 'rec-body');
+    const title = node('div', 'rec-title'); title.append(node('h3', '', item.name));
+    const tags = node('span', 'tags');
+    if (item.cuisine) tags.append(node('span', 'tag', item.cuisine));
+    const price = priceText(item); if (price) tags.append(node('span', 'tag', price));
+    if (item.distance_km != null) tags.append(node('span', 'tag', `${item.distance_km.toFixed(1)} km`));
+    if (item.open_after_8pm === true) tags.append(node('span', 'tag late', 'Open late'));
+    if (item.city && state.info.dataset === 'chicago' && item.city !== 'Chicago') tags.append(node('span', 'tag', item.city));
+    title.append(tags); body.append(title);
+    body.append(node('p', 'desc', item.description || (unknown ? 'Appears in ratings but has no catalog record.' : (item.categories || []).join(' · ') || 'No description available.')));
+    const reasons = Array.isArray(item.reasons) ? item.reasons : [];
+    const chips = node('div', 'reasons');
+    if (unknown) chips.append(node('span', 'reason warn', 'Ratings-only item; catalog details missing'));
+    for (const r of reasons.slice(0, 4)) chips.append(node('span', 'reason', r.replace(/\.$/, '')));
+    body.append(chips);
+    const side = node('div', 'rec-side');
+    const score = node('div', 'score'); const value = node('div', 'value'); value.append(node('span', '', 'ranking score'), node('b', '', fmt(item.ranking_score)));
+    const bar = node('div', 'bar'); const fill = node('i'); fill.style.width = `${Math.max(4, Math.min(100, (Math.max(item.ranking_score || 0, 0) / top) * 100)).toFixed(1)}%`; bar.append(fill);
+    score.append(value, bar); side.append(score);
+    const actions = node('div', 'actions');
+    const detail = node('button', 'ghost', 'Why this pick'); detail.type = 'button'; detail.setAttribute('aria-expanded', 'false');
+    detail.onclick = async () => {
+      try {
+        let box = body.querySelector('.detail');
+        if (box) { box.remove(); detail.textContent = 'Why this pick'; detail.setAttribute('aria-expanded', 'false'); return; }
+        await logEvent(item, 'click');
+        box = node('div', 'detail');
+        for (const reason of reasons) box.append(node('p', '', `• ${reason}`));
+        const scores = node('p', ''); scores.append('ranking score ', node('code', '', fmt(item.ranking_score)), ' · retrieval score ', node('code', '', fmt(item.retrieval_score)), ` · slot ${index + 1} of ${rows.length}`); box.append(scores);
+        box.append(node('p', '', 'Scores order items within this arm only. This click was logged against the impression, so per-arm CTR reflects it.'));
+        body.append(box); detail.textContent = 'Hide details'; detail.setAttribute('aria-expanded', 'true'); refreshHealth();
+      } catch (e) { toast(e.message); }
+    };
+    const saved = state.favorites.has(item.item_id);
+    const favorite = node('button', `favorite${saved ? ' saved' : ''}`, saved ? '♥ Saved' : '♡ Save'); favorite.type = 'button'; favorite.setAttribute('aria-pressed', String(saved));
+    favorite.onclick = async () => {
+      if (state.favorites.has(item.item_id)) { state.favorites.delete(item.item_id); toast('Removed from favorites.'); }
+      else { try { await logEvent(item, 'favorite'); state.favorites.add(item.item_id); toast('Saved. Favorite event logged.'); } catch (e) { toast(e.message); return; } }
+      try { localStorage.setItem('table-for-you-favorites', JSON.stringify([...state.favorites])); } catch (_) {}
+      const on = state.favorites.has(item.item_id); favorite.classList.toggle('saved', on); favorite.textContent = on ? '♥ Saved' : '♡ Save'; favorite.setAttribute('aria-pressed', String(on)); refreshHealth();
+    };
+    actions.append(detail, favorite); side.append(actions);
+    card.append(rank, body, side); $('cards').append(card);
+  });
+  const notices = [result.message, result.fallback].filter(Boolean);
+  $('result-limits').textContent = notices.length ? notices.join(' ') : 'Scores are relative ranking priorities within one model arm, not predicted ratings, and are not comparable across arms.';
+}
+async function recommend() {
+  if (!state.info || state.busy) return;
+  state.busy = true; updateButton(); $('error').textContent = '';
+  try { renderResults(await api('/api/recommend', {session_id: state.session, preferences: preferences(), model: state.model, k: state.info.default_k})); await refreshHealth(); }
+  catch (e) { $('error').textContent = e.message; }
+  finally { state.busy = false; updateButton(); }
+}
+
+/* ---------- offline evaluation ---------- */
+const POLICY_LABELS = {popularity: 'Popularity (Bayesian avg rating)', most_popular: 'Most popular (training count)', content_sentence: 'Content · sentence encoder', content_tfidf: 'Content · TF-IDF', content_ranked: 'Content + blend', two_tower_ranked: 'Two-tower + blend', learned_ranker: 'LightGBM learned ranker', learned_ranker_no_geo: 'LightGBM ranker without distance'};
+function policyLabel(name) {
+  if (POLICY_LABELS[name]) return POLICY_LABELS[name];
+  return name.replace('two_tower[', 'Two-tower · ').replace('sequential[', 'Sequential · ').replace('sequential', 'Sequential Transformer').replace(']', '').replace('in_batch_logq', 'in-batch + logQ').replace('in_batch', 'in-batch').replace('full', 'full softmax').replace('+sid', ' + Semantic IDs').replace('+id', ' + item IDs');
+}
+function table(headers, rows, rowClass) {
+  const wrap = node('div', 'table-wrap'), t = node('table'), thead = node('thead'), tr = node('tr'), tbody = node('tbody');
+  headers.forEach(h => tr.append(node('th', '', h))); thead.append(tr);
+  rows.forEach((row, i) => { const r = node('tr', rowClass ? rowClass(i) : ''); row.forEach((cell, j) => { const td = node('td', j ? 'number' : ''); if (cell instanceof Node) td.append(cell); else td.textContent = cell; r.append(td); }); tbody.append(r); });
+  t.append(thead, tbody); wrap.append(t); return wrap;
+}
+function box(title, children) { const b = node('div', 'panel'); b.append(node('h3', '', title), ...children); return b; }
+function kv(label, value) { const d = node('div', 'kv'); d.append(node('span', '', label), node('b', '', value)); return d; }
+function gain(label, share, max) { const d = node('div', 'gain'); const bar = node('div', 'bar'); const i = node('i'); i.style.width = `${(share / max * 100).toFixed(1)}%`; bar.append(i); d.append(node('span', '', label), bar, node('b', '', pct(share))); return d; }
+function niceStep(maxValue) { for (const s of [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5]) if (maxValue / s <= 7) return s; return 1; }
+function ndcgChart(report) {
+  const k = report.k, served = new Set(Object.values(report.served || {}));
+  const rows = Object.entries(report.policies).map(([name, r]) => { const t = r.test.overall; return {label: policyLabel(name), v: t[`ndcg_at_${k}`], ci: t.ndcg_95pct_user_bootstrap, served: served.has(name), recall: t[`recall_at_${k}`], cov: t[`catalog_coverage_at_${k}`]}; })
+    .filter(r => typeof r.v === 'number').sort((a, b) => b.v - a.v);
+  const labelW = 340, valueW = 76, rowH = 30, padTop = 10, padBottom = 48, W = 960, plotW = W - labelW - valueW - 20, H = padTop + rows.length * rowH + padBottom;
+  const maxV = Math.max(...rows.map(r => r.ci ? r.ci[1] : r.v)), step = niceStep(maxV), xMax = Math.ceil(maxV / step + 1e-9) * step;
+  const x = v => labelW + (v / xMax) * plotW;
+  const svg = svgNode('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `NDCG@${k} on the test split per policy with 95% intervals`});
+  for (let v = 0; v <= xMax + 1e-12; v += step) {
+    svg.append(svgNode('line', {class: 'grid', x1: x(v), x2: x(v), y1: padTop, y2: H - padBottom + 4}));
+    const t = svgNode('text', {class: 'axis', x: x(v), y: H - padBottom + 18, 'text-anchor': 'middle'}); t.textContent = v.toFixed(step < 0.001 ? 4 : 3); svg.append(t);
+  }
+  const axisTitle = svgNode('text', {class: 'axis', x: x(xMax), y: H - 6, 'text-anchor': 'end'}); axisTitle.textContent = `NDCG@${k}, full catalog`; svg.append(axisTitle);
+  rows.forEach((r, i) => {
+    const y = padTop + i * rowH + rowH / 2, g = svgNode('g', {class: 'row'});
+    const title = svgNode('title'); title.textContent = `${r.label}: NDCG@${k} ${fmt(r.v)}${r.ci ? ` [${fmt(r.ci[0])}, ${fmt(r.ci[1])}]` : ''} · Recall@${k} ${fmt(r.recall)} · coverage ${fmt(r.cov, 3)}`; g.append(title);
+    const lbl = svgNode('text', {class: 'lbl', x: labelW - 14, y: y + 4, 'text-anchor': 'end'}); lbl.textContent = r.label.length > 44 ? r.label.slice(0, 43) + '…' : r.label; g.append(lbl);
+    const w = Math.max(x(r.v) - x(0), 2), h = 14, rx = 4;
+    g.append(svgNode('path', {class: r.served ? 'bar-served' : 'bar-plain', d: `M${x(0)},${y - h / 2} H${x(0) + w - rx} a${rx},${rx} 0 0 1 ${rx},${rx} V${y + h / 2 - rx} a${rx},${rx} 0 0 1 -${rx},${rx} H${x(0)} Z`}));
+    if (r.ci) { g.append(svgNode('line', {class: 'ci', x1: x(r.ci[0]), x2: x(r.ci[1]), y1: y, y2: y})); for (const c of r.ci) g.append(svgNode('line', {class: 'ci', x1: x(c), x2: x(c), y1: y - 5, y2: y + 5})); }
+    const val = svgNode('text', {class: 'val', x: (r.ci ? x(r.ci[1]) : x(r.v)) + 8, y: y + 4}); val.textContent = fmt(r.v); g.append(val);
+    svg.append(g);
+  });
+  return svg;
+}
+function headlineTiles(report) {
+  const k = report.k, policies = report.policies, servedName = report.served && (report.served.learned || report.served.two_tower || report.served.baseline);
+  const served = servedName && policies[servedName], base = policies.most_popular, tiles = [];
+  if (served) {
+    const t = served.test.overall, ci = t.ndcg_95pct_user_bootstrap;
+    tiles.push(['Served arm · test NDCG@' + k, fmt(t[`ndcg_at_${k}`]), ci ? `95% CI [${fmt(ci[0])}, ${fmt(ci[1])}] · ${policyLabel(servedName)}` : policyLabel(servedName)]);
+    if (base) tiles.push(['Lift over most popular', `${(t[`ndcg_at_${k}`] / base.test.overall[`ndcg_at_${k}`]).toFixed(1)}×`, `NDCG@${k} ${fmt(t[`ndcg_at_${k}`])} vs ${fmt(base.test.overall[`ndcg_at_${k}`])} for the frequency baseline`]);
+    tiles.push([`Coverage@${k}`, pct(t[`catalog_coverage_at_${k}`], 0), `share of the catalog that appears in at least one top-${k} list · Recall@${k} ${fmt(t[`recall_at_${k}`])}`]);
+  }
+  $('headline-tiles').replaceChildren(...tiles.map(([label, big, note]) => { const d = node('div', 'tile'); d.append(node('span', 'eyebrow', label), node('div', 'big', big), node('p', '', note)); return d; }));
+}
+async function refreshMetrics() {
+  try {
+    const report = state.report = await api('/api/metrics');
+    $('metrics-json').textContent = JSON.stringify(report, null, 2);
+    $('metrics-content').replaceChildren(); $('metrics-extra').replaceChildren(); $('ndcg-chart').replaceChildren(); $('headline-tiles').replaceChildren();
+    if (!report.policies) { $('metrics-content').append(node('p', 'hint', 'No offline report yet. Run make train, then refresh.')); $('ndcg-chart').append(node('p', 'hint', 'No offline report yet.')); return; }
+    const k = report.k, served = new Set(Object.values(report.served || {}));
+    if (report.split && report.split.counts) { const total = Object.values(report.split.counts).reduce((a, b) => a + b, 0); $('fact-ratings').textContent = total >= 1e6 ? `${(total / 1e6).toFixed(2)}M` : total.toLocaleString(); }
+    const servedName = report.served && (report.served.learned || report.served.two_tower || report.served.baseline);
+    if (servedName && report.policies[servedName]) { const t = report.policies[servedName].test.overall, base = report.policies.most_popular; $('fact-ndcg').textContent = fmt(t[`ndcg_at_${k}`]); if (base) $('fact-ndcg').append(node('small', '', `${(t[`ndcg_at_${k}`] / base.test.overall[`ndcg_at_${k}`]).toFixed(1)}× the most-popular baseline`)); }
+    $('chart-title').textContent = `NDCG@${k} on the test split, by policy`;
+    headlineTiles(report); $('ndcg-chart').append(ndcgChart(report));
+    const split = node('p', 'hint'); split.style.marginBottom = '12px';
+    split.append(`${report.dataset} · train through ${report.split.train_end_inclusive}, validation through ${report.split.validation_end_inclusive}, then test · ${fmt(report.split.queries.test)} test queries`);
+    const names = Object.keys(report.policies);
+    const rows = names.map(name => {
+      const r = report.policies[name], t = r.test.overall, ci = t.ndcg_95pct_user_bootstrap, tail = r.test[`recall_at_${k}_tail_item_targets`];
+      const label = node('span', '', policyLabel(name)); if (served.has(name)) label.append(node('span', 'badge', 'served'));
+      return [label, r.validation ? fmt(r.validation.overall[`ndcg_at_${k}`]) : 'fit on val', fmt(t[`recall_at_${k}`]), fmt(t[`ndcg_at_${k}`]), ci ? `${fmt(ci[0])} – ${fmt(ci[1])}` : '—', fmt(t[`catalog_coverage_at_${k}`], 3), tail ? fmt(tail.recall) : '—'];
+    });
+    $('metrics-content').append(split, table(['Policy', `Val NDCG@${k}`, `Recall@${k}`, `NDCG@${k}`, '95% CI', 'Coverage', 'Tail recall'], rows, i => served.has(names[i]) ? 'served' : ''));
+    if (report.ranker) {
+      const r = report.ranker, gains = Object.entries(r.learned_ranker.feature_gain_share).slice(0, 7), maxGain = Math.max(...gains.map(g => g[1]));
+      const objectives = Object.entries(r.objective_selection || {}).map(([o, v]) => kv(`${o}${o === r.selected_objective ? ' (selected)' : ''}`, fmt(v)));
+      $('metrics-extra').append(box('Learned ranker', [kv('Candidates per query', fmt(r.candidates_per_query, 1)), kv('Candidate recall on validation', pct(r.candidate_recall_on_validation)), node('p', 'hint', `Objective, chosen by held-out validation NDCG@${k}`), ...objectives, node('p', 'hint', 'Feature importance, share of gain'), ...gains.map(([f, g]) => gain(f, g, maxGain))]));
+    }
+    if (report.ann) $('metrics-extra').append(box('ANN index (IVF) vs exact search', [table(['Method', 'Recall vs exact', 'Items scanned', 'ms / query'], report.ann.map(a => [a.method, fmt(a.recall_vs_exact, 3), fmt(a.items_scanned), fmt(a.ms_per_query, 3)]))]));
+    if (report.geo) { const g = report.geo; $('metrics-extra').append(box('Geography of test targets', [kv("Median distance from the user's usual area", `${g.test_target_distance_km_percentiles['50']} km`), ...Object.entries(g.share_of_test_targets_within_km).map(([r, s]) => kv(`Within ${r} km`, pct(s)))])); }
+    if (report.semantic_ids) { const s = report.semantic_ids; $('metrics-extra').append(box('Semantic IDs (RQ-KMeans)', [kv('Levels × codebook', `${s.levels} × ${s.codebook_size}`), kv('Distinct IDs / items', `${fmt(s.unique_ids)} / ${fmt(s.items)}`), kv('Codebook utilization by level', s.codebook_utilization.map(u => `${Math.round(u * 100)}%`).join(' · ')), kv('Residual error by level', s.relative_reconstruction_error.map(e => fmt(e, 3)).join(' → '))])); }
+  } catch (e) { $('metrics-content').replaceChildren(node('p', 'error', e.message)); $('metrics-json').textContent = 'Report currently unavailable.'; }
+}
+
+/* ---------- health + online metrics ---------- */
+async function refreshHealth() {
+  try {
+    const health = await api('/api/health');
+    $('status').classList.remove('offline');
+    $('service-status').textContent = health.model_version ? `online · ${health.model_version}` : 'online';
+    const counts = health.log_counts || {};
+    $('impression-count').textContent = fmt(counts.impressions); $('click-count').textContent = fmt(counts.clicks); $('favorite-count').textContent = fmt(counts.favorites);
+    refreshOnline();
+  } catch (_) { $('status').classList.add('offline'); $('service-status').textContent = 'offline'; }
+}
+async function refreshOnline() {
+  try {
+    const rows = (await api('/api/online-metrics')).by_model || [];
+    $('online-content').replaceChildren();
+    if (!rows.length) { $('online-content').append(node('p', 'hint', 'No impressions logged yet. Get recommendations, then open or save a pick.')); return; }
+    $('online-content').append(table(['Model arm', 'Requests', 'Impressions', 'CTR', 'Favorite rate'], rows.map(r => [MODEL_LABELS[r.model] || r.model, fmt(r.requests), fmt(r.impressions), pct(r.ctr), pct(r.favorite_rate)])),
+      node('p', 'hint', 'An impression counts as clicked or favorited at most once. With real traffic, this table is the readout of an A/B test between arms.'));
+    $('online-content').lastChild.style.marginTop = '10px';
+  } catch (e) { $('online-content').replaceChildren(node('p', 'error', e.message)); }
+}
+
+/* ---------- tabs ---------- */
+function selectTab(name) {
+  document.querySelectorAll('.tab').forEach(b => { const on = b.dataset.tab === name; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  document.querySelectorAll('.tab-panel').forEach(panel => panel.hidden = panel.id !== 'panel-' + name);
+  if (name === 'pipeline') refreshHealth();
+}
+document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => { selectTab(button.dataset.tab); history.replaceState(null, '', location.pathname + location.search + '#' + button.dataset.tab); }));
+const tabFromHash = () => { const name = location.hash.slice(1); if (['discover', 'experiments', 'pipeline'].includes(name)) selectTab(name); };
+window.addEventListener('hashchange', tabFromHash); tabFromHash();
+$('preferences-form').addEventListener('submit', e => { e.preventDefault(); recommend(); });
+$('refresh-metrics').onclick = refreshMetrics; $('refresh-logs').onclick = refreshHealth;
+// The offline report is half a megabyte; load it after the catalog and any deep-linked query so the first recommendation is not delayed.
+refreshHealth(); loadInfo().then(refreshMetrics);
+</script>
+</body>
+</html>
